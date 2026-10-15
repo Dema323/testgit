@@ -1,19 +1,28 @@
 """Settings and per-user data locations."""
 import json
 import os
+import shutil
 import uuid
 
-APP_NAME = "Marquee"
+APP_NAME = "Ember"
+OLD_NAME = "Marquee"  # the app's previous name; its settings are carried over
 
 
 def data_dir():
-    if os.environ.get("MARQUEE_HOME"):
-        base = os.environ["MARQUEE_HOME"]
+    if os.environ.get("EMBER_HOME"):
+        base = os.environ["EMBER_HOME"]
+        old = None
     elif os.name == "nt":
-        base = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
+        root = os.environ.get("APPDATA", os.path.expanduser("~"))
+        base, old = os.path.join(root, APP_NAME), os.path.join(root, OLD_NAME)
     else:
-        base = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
-                            APP_NAME.lower())
+        root = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+        base, old = os.path.join(root, APP_NAME.lower()), os.path.join(root, OLD_NAME.lower())
+    if old and not os.path.exists(base) and os.path.isdir(old):
+        try:  # keep sign-in, settings and downloads from before the rename
+            shutil.copytree(old, base, ignore=shutil.ignore_patterns("cache"))
+        except OSError:
+            pass
     os.makedirs(base, exist_ok=True)
     return base
 
@@ -36,6 +45,8 @@ class Config(dict):
         self.setdefault("client_id", str(uuid.uuid4()))
         self.setdefault("quality", "original")
         self.setdefault("download_dir", default_download_dir())
+        self.setdefault("font_file", "")          # optional custom interface font (.ttf/.otf)
+        self.setdefault("sidebar_collapsed", False)
 
     def save(self):
         fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

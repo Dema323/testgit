@@ -48,15 +48,15 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setStyle("Fusion")
-    app.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), "assets", "marquee.png")))
+    app.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), "assets", "ember.png")))
     app.setAttribute(Qt.ApplicationAttribute.AA_DontShowIconsInMenus, False)
     # libmpv requires the C numeric locale; Qt may have changed it.
     locale.setlocale(locale.LC_NUMERIC, "C")
-    theme.load_fonts()
-    app.setFont(theme.font(13))
-    app.setStyleSheet(theme.STYLESHEET)
-
     cfg = Config()
+    theme.load_fonts(cfg.get("font_file", ""))
+    app.setFont(theme.font(14))
+    app.setStyleSheet(theme.stylesheet())
+
     client = PlexClient(cfg)
     ImageLoader(client)
     downloads = DownloadManager(client)

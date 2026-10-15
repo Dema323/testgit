@@ -2,14 +2,15 @@
 import glob
 import os
 
-from PySide6.QtGui import QColor, QFont, QFontDatabase
+from PySide6.QtCore import QRectF
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QPainter, QPixmap, QRadialGradient
 
 ACCENT = "#e5a00d"
 ACCENT_HOVER = "#f3b125"
-BG = "#17191c"
+BG = "#141619"
 BG_TOP = "#1d2024"
 SURFACE = "#22252a"
-SIDEBAR = "#0f1012"
+SIDEBAR = "rgba(0,0,0,0.32)"
 CARD = "#26292e"
 CONTROL = "#34383e"
 TEXT = "#ffffff"
@@ -19,15 +20,54 @@ TEXT_FAINT = "rgba(255,255,255,0.38)"
 FONT = "Figtree"
 FONT_FAMILIES = [FONT, "Segoe UI", "Helvetica Neue", "Arial"]
 
+# Page background: black with four soft corner glows (slate, grey-teal, steel), like Plex's.
+GLOWS = [  # centre (x, y as fraction), radii (fraction of width, height), colour
+    ((0.0, 1.0), (0.8401, 1.4915), QColor(63, 76, 97, 153)),
+    ((0.9681, 1.0), (0.8006, 1.4328), QColor(91, 100, 106, 153)),
+    ((1.0, 0.0), (0.8241, 1.5106), QColor(58, 70, 87, 153)),
+    ((0.0, 0.0), (0.8606, 1.5874), QColor(84, 100, 115, 153)),
+]
+
 
 def color(name):
     return QColor({"accent": ACCENT, "bg": BG, "card": CARD, "control": CONTROL,
-                   "text": TEXT, "sidebar": SIDEBAR, "surface": SURFACE}[name])
+                   "text": TEXT, "surface": SURFACE}[name])
 
 
-def load_fonts():
+def load_fonts(custom_file=""):
+    """Load the bundled fonts, plus an optional user-chosen font file that then becomes the UI font."""
+    global FONT, FONT_FAMILIES
     for path in glob.glob(os.path.join(os.path.dirname(__file__), "fonts", "*.ttf")):
         QFontDatabase.addApplicationFont(path)
+    if custom_file and os.path.exists(custom_file):
+        fid = QFontDatabase.addApplicationFont(custom_file)
+        families = QFontDatabase.applicationFontFamilies(fid) if fid >= 0 else []
+        if families:
+            FONT = families[0]
+            FONT_FAMILIES = [FONT, "Figtree", "Segoe UI", "Arial"]
+    return FONT
+
+
+def render_background(width, height, dim=0.0):
+    """The page background as a pixmap (render once per size; it is costly to paint every frame)."""
+    pm = QPixmap(max(1, width), max(1, height))
+    pm.fill(QColor(0, 0, 0))
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    w, h = pm.width(), pm.height()
+    for (cx, cy), (rx, ry), col in GLOWS:
+        p.save()
+        p.translate(cx * w, cy * h)
+        p.scale(rx * w, ry * h)
+        g = QRadialGradient(0, 0, 1)
+        g.setColorAt(0, col)
+        g.setColorAt(1, QColor(col.red(), col.green(), col.blue(), 0))
+        p.fillRect(QRectF(-cx / rx, -cy / ry, 1 / rx, 1 / ry), g)
+        p.restore()
+    if dim:
+        p.fillRect(pm.rect(), QColor(0, 0, 0, int(255 * dim)))
+    p.end()
+    return pm
 
 
 def font(size=14, weight=QFont.Weight.Normal):
@@ -40,30 +80,32 @@ def font(size=14, weight=QFont.Weight.Normal):
     return f
 
 
-STYLESHEET = f"""
-* {{ font-family: "{FONT}", "Segoe UI", sans-serif; color: {TEXT}; }}
-QMainWindow, #Root {{ background: {BG}; }}
+def stylesheet():
+    return _STYLESHEET.replace("__FONT__", FONT)
+
+
+_STYLESHEET = f"""
+* {{ font-family: "__FONT__", "Figtree", "Segoe UI", sans-serif; color: {TEXT}; }}
+QMainWindow {{ background: #000; }}
 QToolTip {{ background: {SURFACE}; color: {TEXT}; border: 1px solid {CONTROL}; padding: 5px 9px;
             border-radius: 4px; font-size: 13px; }}
 
 #Sidebar {{ background: {SIDEBAR}; }}
 #Sidebar QPushButton {{
-    text-align: left; padding: 10px 20px; border: none; border-radius: 0;
-    font-size: 15px; font-weight: 500; color: {TEXT_MUTED}; background: transparent;
+    text-align: left; padding: 10px 14px; margin: 1px 10px; border: none; border-radius: 8px;
+    font-size: 15px; font-weight: 600; color: rgba(255,255,255,0.72); background: transparent;
 }}
-#Sidebar QPushButton:hover {{ color: {TEXT}; background: rgba(255,255,255,0.04); }}
-#Sidebar QPushButton:checked {{
-    color: {TEXT}; font-weight: 600; background: rgba(255,255,255,0.07);
-    border-left: 3px solid {ACCENT}; padding-left: 17px;
-}}
+#Sidebar QPushButton:hover {{ color: {TEXT}; background: rgba(255,255,255,0.08); }}
+#Sidebar QPushButton:checked {{ color: {TEXT}; background: rgba(255,255,255,0.14); }}
+#Sidebar[collapsed="true"] QPushButton {{ padding: 10px 0; margin: 1px 10px; text-align: center; }}
 #SidebarHeading {{ color: {TEXT_FAINT}; font-size: 11px; font-weight: 700; letter-spacing: 1.4px;
-                   padding: 22px 20px 8px 20px; }}
+                   padding: 20px 24px 8px 24px; }}
 #Brand {{ font-size: 23px; font-weight: 800; color: {ACCENT}; padding: 20px 20px 16px 20px;
           letter-spacing: -0.3px; }}
 
-#TopBar {{ background: {BG}; }}
+#TopBar {{ background: rgba(0,0,0,0.32); }}
 #Search {{
-    background: rgba(255,255,255,0.08); border: 1px solid transparent; border-radius: 18px;
+    background: rgba(255,255,255,0.1); border: 1px solid transparent; border-radius: 18px;
     padding: 0 14px 0 4px; font-size: 14px; font-weight: 500; min-height: 36px;
     selection-background-color: {ACCENT};
 }}

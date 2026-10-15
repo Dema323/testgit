@@ -1,4 +1,4 @@
-# PyInstaller build: `pyinstaller marquee.spec --noconfirm`  ->  dist/Marquee.exe (single file)
+# PyInstaller build: `pyinstaller ember.spec --noconfirm`  ->  dist/Ember.exe (single file)
 # On Windows, put libmpv-2.dll next to this file first (the GitHub workflow does this).
 import os
 
@@ -7,7 +7,7 @@ binaries = [("libmpv-2.dll", ".")] if os.path.exists("libmpv-2.dll") else []
 a = Analysis(
     ["run.py"],
     binaries=binaries,
-    datas=[("marquee/fonts", "marquee/fonts"), ("marquee/assets", "marquee/assets")],
+    datas=[("ember/fonts", "ember/fonts"), ("ember/assets", "ember/assets")],
     hiddenimports=["mpv"],
     excludes=["tkinter", "numpy", "PIL", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets",
               "PySide6.Qt3DCore", "PySide6.QtQuick", "PySide6.QtQml", "PySide6.QtPdf", "PySide6.QtMultimedia"],
@@ -20,13 +20,13 @@ a.binaries = [b for b in a.binaries if not any(u.lower() in b[0].lower() for u i
 a.datas = [d for d in a.datas if not any(u.lower() in d[0].lower() for u in UNUSED)]
 
 pyz = PYZ(a.pure)
-splash = Splash("marquee/assets/splash.png", binaries=a.binaries, datas=a.datas,
+splash = Splash("ember/assets/splash.png", binaries=a.binaries, datas=a.datas,
                 text_pos=None, always_on_top=True)
 exe = EXE(
     pyz, a.scripts, splash, splash.binaries, a.binaries, a.datas, [],
-    name="Marquee",
+    name="Ember",
     console=False,
     upx=False,
-    icon="marquee/assets/marquee.ico",
+    icon="ember/assets/ember.ico",
     version="version_info.txt",
 )

@@ -33,19 +33,19 @@ jobs:
           ls -la libmpv-2.dll
 
       - name: Build single-file exe
-        run: pyinstaller marquee.spec --noconfirm
+        run: pyinstaller ember.spec --noconfirm
 
       - name: Launch test (the exe starts and stays up)
         shell: pwsh
         run: |
-          Get-Item dist\Marquee.exe | Select-Object Name, Length
-          $p = Start-Process dist\Marquee.exe -PassThru
+          Get-Item dist\Ember.exe | Select-Object Name, Length
+          $p = Start-Process dist\Ember.exe -PassThru
           Start-Sleep -Seconds 30
-          if ($p.HasExited) { Write-Error "Marquee.exe exited with code $($p.ExitCode)"; exit 1 }
+          if ($p.HasExited) { Write-Error "Ember.exe exited with code $($p.ExitCode)"; exit 1 }
           Stop-Process -Id $p.Id -Force
-          $log = Join-Path $env:APPDATA "Marquee\error.log"
+          $log = Join-Path $env:APPDATA "Ember\error.log"
           if (Test-Path $log) { Get-Content $log; Write-Error "error.log was written"; exit 1 }
-          "Marquee.exe started and kept running."
+          "Ember.exe started and kept running."
 
       - name: Playback test (real Windows video output, mock Plex server)
         shell: bash
@@ -64,8 +64,8 @@ jobs:
 
       - uses: actions/upload-artifact@v5
         with:
-          name: Marquee-exe
-          path: dist/Marquee.exe
+          name: Ember-exe
+          path: dist/Ember.exe
 
       - name: Publish download (latest build)
         if: github.ref == 'refs/heads/main'
@@ -74,13 +74,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest-build --yes --cleanup-tag || true
-          gh release create latest-build dist/Marquee.exe --target "$GITHUB_SHA" --latest \
-            --title "Marquee (latest build)" \
-            --notes "Download **Marquee.exe** below and double-click it. Windows 10/11, 64-bit. Built from ${GITHUB_SHA::7}."
+          gh release create latest-build dist/Ember.exe --target "$GITHUB_SHA" --latest \
+            --title "Ember (latest build)" \
+            --notes "Download **Ember.exe** below and double-click it. Windows 10/11, 64-bit. Built from ${GITHUB_SHA::7}."
 
       - name: Publish release (version tags)
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/Marquee.exe --generate-notes || gh release upload "${GITHUB_REF_NAME}" dist/Marquee.exe --clobber
+        run: gh release create "${GITHUB_REF_NAME}" dist/Ember.exe --generate-notes || gh release upload "${GITHUB_REF_NAME}" dist/Ember.exe --clobber

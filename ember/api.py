@@ -8,7 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-PRODUCT = "Marquee"
+PRODUCT = "Ember"
 VERSION = "0.1.0"
 PLEX_TV = "https://plex.tv"
 PLAYABLE = {"movie", "episode", "track", "clip"}

@@ -1,4 +1,4 @@
-"""Drive Marquee offscreen against the mock server and screenshot each screen."""
+"""Drive Ember offscreen against the mock server and screenshot each screen."""
 import json, os, sys, time
 OUT = sys.argv[1]
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -6,19 +6,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from marquee import app as appmod  # noqa: F401  (ensures package imports)
-from marquee import theme
-from marquee.api import PlexClient
-from marquee.config import Config
-from marquee.downloads import DownloadManager
-from marquee.images import ImageLoader
-from marquee.window import MainWindow
+from ember import app as appmod  # noqa: F401  (ensures package imports)
+from ember import theme
+from ember.api import PlexClient
+from ember.config import Config
+from ember.downloads import DownloadManager
+from ember.images import ImageLoader
+from ember.window import MainWindow
 
 qapp = QApplication(sys.argv)
 theme.load_fonts()
-qapp.setFont(theme.font(13))
+qapp.setFont(theme.font(14))
 qapp.setStyle("Fusion")
-qapp.setStyleSheet(theme.STYLESHEET)
+qapp.setStyleSheet(theme.stylesheet())
 cfg = Config()
 cfg.update(user_token="USR", server_url=f"http://127.0.0.1:{os.environ['PORT']}", server_token="SRVTOKEN",
            server_name="Living Room Server", server_id="mock", download_dir=os.path.join(OUT, "dl"))
@@ -75,6 +75,19 @@ def step(delay):
 @step(3500)
 def home():
     shot("1-home")
+    win.toggle_sidebar()
+
+
+@step(800)
+def sidebar_collapsed():
+    results["sidebar_collapsed_width"] = win.sidebar.width()
+    shot("1b-home-sidebar-folded")
+    win.toggle_sidebar()
+
+
+@step(800)
+def sidebar_expanded():
+    results["sidebar_expanded_width"] = win.sidebar.width()
 
 
 @step(200)
@@ -103,7 +116,7 @@ def movie_details():
 @step(3000)
 def show_details():
     shot("5-show-details")
-    from marquee.cards import HubRow
+    from ember.cards import HubRow
     results["show200_seasons_row"] = bool(page().findChildren(HubRow))
     win.open_key("300")
 
@@ -111,7 +124,7 @@ def show_details():
 @step(3000)
 def show_details_dict_ondeck():
     shot("5b-show-ondeck-object")
-    from marquee.cards import HubRow
+    from ember.cards import HubRow
     results["show300_seasons_row"] = bool(page().findChildren(HubRow))
     results["show300_play_button"] = [b.text() for b in page().findChildren(type(win.back_btn))
                                       if b.objectName() == "Primary"]
@@ -127,6 +140,8 @@ def season_details():
 @step(3000)
 def episode_details():
     shot("6b-episode")
+    from ember.details import CastCard
+    results["episode_cast_cards"] = len(page().findChildren(CastCard))
     links = [b for b in page().findChildren(type(win.back_btn)) if b.objectName() == "Link"]
     results["episode_links"] = [b.text() for b in links]
     next(b for b in links if b.text() == "Season 1").click()
@@ -197,6 +212,24 @@ def transcoding():
     results["transcode_path"] = p.player.path
     results["transcode_pos"] = p.pos_ms
     results["transcode_loaded"] = p.loaded
+    results["pos_before_minimize"] = p.pos_ms
+    p.minimize_requested.emit()  # Back/Esc: keep playing, browse with the mini player
+
+
+@step(2500)
+def minimized():
+    p = win.player
+    results["minimized_still_playing"] = p is not None and p.pos_ms > results["pos_before_minimize"] + 1000
+    results["mini_player_visible"] = win.mini.isVisible()
+    results["library_shown_while_playing"] = win.shell.currentIndex() == 0
+    shot("8c-mini-player")
+    win.restore_player()
+
+
+@step(1000)
+def restored():
+    p = win.player
+    results["restored_player"] = win.shell.currentWidget() is p
     p.stop()
 
 

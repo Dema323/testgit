@@ -1,10 +1,11 @@
-# Marquee
+# Ember
 
 A desktop player for your Plex Media Server, with a dark, poster-driven interface.
+(Previously called Marquee; settings and downloads carry over automatically.)
 It talks to your server through the standard Plex HTTP API and plays everything with
 [mpv](https://mpv.io) (libmpv), embedded in the window.
 
-Marquee is an independent project and is not affiliated with or endorsed by Plex, Inc.
+Ember is an independent project and is not affiliated with or endorsed by Plex, Inc.
 
 ## Features
 
@@ -19,6 +20,8 @@ Marquee is an independent project and is not affiliated with or endorsed by Plex
   Play / Resume / Play from start, mark watched or unwatched, and download.
 - **Version, audio and subtitle pickers** on the details page and in the player. Your choice
   is saved to the server, so other Plex apps remember it too.
+- **Plays inside the main window.** Press Back or Esc to keep the video playing while you browse,
+  with a mini player at the bottom; click it to return. The sidebar folds to icons with the menu button.
 - **Playback**
   - *Original quality* streams the file untouched; mpv decodes it, including 4K HEVC.
   - Lower qualities (1080p 20/12/8 Mbps down to 720 kbps) ask the server to transcode.
@@ -30,7 +33,7 @@ Marquee is an independent project and is not affiliated with or endorsed by Plex
   metadata is passed through. Turn on *Use HDR* in Windows display settings.
 - **Offline downloads.** Download a movie, an episode, a whole season, all of a show, or an
   album. Downloads resume after interruptions and show progress on the Downloads page. If
-  the server can't be reached, Marquee opens in offline mode and plays your downloads.
+  the server can't be reached, Ember opens in offline mode and plays your downloads.
 - **Keyboard**
   - Library: `Ctrl+F` search; `Alt+←` or `Backspace` to go back.
   - Player: `Space` play/pause; `←` / `→` jump back 10 s / forward 30 s; `↑` / `↓` volume;
@@ -38,8 +41,8 @@ Marquee is an independent project and is not affiliated with or endorsed by Plex
 
 ## Download
 
-Get **Marquee.exe** from the repository's *Releases* page ("Marquee (latest build)"), or directly:
-`https://github.com/<owner>/<repo>/releases/download/latest-build/Marquee.exe`.
+Get **Ember.exe** from the repository's *Releases* page ("Ember (latest build)"), or directly:
+`https://github.com/<owner>/<repo>/releases/download/latest-build/Ember.exe`.
 
 It is a single file: no installer, no unzipping and nothing else to install. It needs
 Windows 10 or 11, 64-bit. The exe isn't code-signed, so the first time you run it Windows
@@ -51,7 +54,7 @@ SmartScreen may show "Windows protected your PC": click **More info → Run anyw
 
 1. Downloads `libmpv-2.dll` from
    [shinchiro/mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake/releases).
-2. Builds the single-file `Marquee.exe` with PyInstaller.
+2. Builds the single-file `Ember.exe` with PyInstaller.
 3. Launches the exe to check it starts.
 4. Runs `tests/run_ui_test.py`, which drives the real app against a mock Plex server and
    checks playback, audio switching, transcoding and downloads using real Windows video output.
@@ -64,8 +67,8 @@ To build on Windows yourself:
 ```powershell
 pip install -r requirements.txt pyinstaller
 # put libmpv-2.dll (from an mpv-dev-x86_64 build) in this folder, then:
-pyinstaller marquee.spec --noconfirm
-dist\Marquee.exe
+pyinstaller ember.spec --noconfirm
+dist\Ember.exe
 ```
 
 ## Run from source
@@ -80,7 +83,7 @@ package on Linux.
 
 ## Settings and customisation
 
-Settings and data live in `%APPDATA%\Marquee` on Windows or `~/.config/marquee` on Linux:
+Settings and data live in `%APPDATA%\Ember` on Windows or `~/.config/ember` on Linux:
 
 - `config.json`: your sign-in token and preferences. Keep it private.
 - `downloads.json` and `downloads-art/`: the offline download index and artwork.
@@ -102,5 +105,5 @@ top right).
 
 ## Fonts
 
-The bundled Open Sans is licensed under the SIL Open Font License (see `marquee/fonts/OFL.txt`).
+The bundled Open Sans is licensed under the SIL Open Font License (see `ember/fonts/OFL.txt`).
 If it can't be loaded, the interface falls back to Segoe UI.

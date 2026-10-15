@@ -230,6 +230,8 @@ class Overlay(QWidget):
 
 class PlayerView(QWidget):
     closed = Signal(str, int)  # ratingKey, last position (ms)
+    minimize_requested = Signal()  # back/Esc: keep playing, show the library with a mini player
+    progress = Signal(float, float, bool)  # position ms, duration ms, paused
 
     def __init__(self, app, meta, media_index=0, start_ms=0, local_file=None):
         super().__init__()
@@ -275,7 +277,7 @@ class PlayerView(QWidget):
         self.fade_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.fade_anim.finished.connect(lambda: c.setVisible(self.fade.opacity() > 0.01))
 
-        back = osd_button("back", "Back (Esc)", 28, self.stop)
+        back = osd_button("back", "Back to library — keeps playing (Esc)", 28, self.minimize_requested.emit)
         self.top_title = QLabel(objectName="OsdTitle")
         self.fs_top = osd_button("fullscreen", "Fullscreen (F)", 26, self.toggle_fullscreen)
         top = QHBoxLayout()
@@ -422,7 +424,7 @@ class PlayerView(QWidget):
         base = dict(
             wid=str(int(self.video.winId())),
             # gpu-next first; the older gpu renderer is the fallback for old GPUs, VMs and RDP.
-            vo=os.environ.get("MARQUEE_VO", "gpu-next,gpu,"),
+            vo=os.environ.get("EMBER_VO", "gpu-next,gpu,"),
             hwdec="auto-safe",
             keep_open="yes",
             osc=False, input_default_bindings=False, input_vo_keyboard=False, input_cursor=False,
@@ -569,6 +571,7 @@ class PlayerView(QWidget):
         self.elapsed.setText(fmt_clock(shown))
         self.remaining.setText("-" + fmt_clock(max(0, self.duration_ms - shown)) if self.duration_ms else "")
         self.play_btn.setIcon(icons.icon("play" if paused else "pause", "#ffffff"))
+        self.progress.emit(float(self.pos_ms), float(self.duration_ms or 0), paused)
 
         state = "paused" if paused else "playing"
         if self.loaded and (state != self.reported_state or time.monotonic() - self.last_report > REPORT_INTERVAL):
@@ -580,6 +583,8 @@ class PlayerView(QWidget):
 
     def _autohide(self, paused):
         """Controls show while paused or while the mouse moves over the video; otherwise they fade."""
+        if not self.isVisible():
+            return  # minimized to the mini player
         pos = QCursor.pos()
         hovering = self.overlay.isVisible() and self.overlay.geometry().contains(pos)
         if paused:
@@ -701,7 +706,7 @@ class PlayerView(QWidget):
         elif self.window().isFullScreen():
             self.toggle_fullscreen()
         else:
-            self.stop()
+            self.minimize_requested.emit()
 
     def play_next(self):
         meta = self.meta
@@ -845,9 +850,12 @@ class SettingsPanel(QWidget):
 
     def place(self):
         parent = self.parentWidget()
-        # Sit above the seek bar and transport row, sized to the list (scrolls if long).
-        h = max(160, min(self.desired_height, parent.height() - 340))
-        self.setGeometry(parent.width() - self.width() - 30, parent.height() - h - 256, self.width(), h)
+        # Directly above the seek bar, right-aligned under the settings button; scrolls if long.
+        seek_top = self.view.seek.mapTo(parent, QPoint(0, 0)).y() if self.view.seek.isVisible() \
+            else parent.height() - 140
+        bottom = seek_top + 10
+        h = max(150, min(self.desired_height, bottom - 90))
+        self.setGeometry(parent.width() - self.width() - 30, bottom - h, self.width(), h)
 
     def open(self):
         self.place()

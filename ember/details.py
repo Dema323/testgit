@@ -1,6 +1,6 @@
 """Item details: backdrop, poster, actions, version/audio/subtitle pickers, seasons, episodes, cast."""
 from PySide6.QtCore import QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPixmap, QRadialGradient
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (QComboBox, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
                                QVBoxLayout, QWidget)
 
@@ -192,30 +192,27 @@ class Backdrop(QWidget):
     def _render(self):
         w, h = max(1, self.width()), max(1, self.height())
         pm = QPixmap(w, h)
-        pm.fill(QColor(theme.BG))
+        pm.fill(Qt.GlobalColor.transparent)  # the window's gradient shows through
+        if self.source is None:
+            return pm
         p = QPainter(pm)
-        if self.source is not None:
-            art_h = int(w * 9 / 16)
-            scaled = self.source.scaled(w, art_h, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                        Qt.TransformationMode.SmoothTransformation)
-            p.setOpacity(0.42)
-            p.drawPixmap(0, 0, scaled)
-            p.setOpacity(1)
-            fade = QLinearGradient(0, 0, 0, art_h)
-            fade.setColorAt(0.0, QColor(23, 25, 28, 30))
-            fade.setColorAt(0.5, QColor(23, 25, 28, 150))
-            fade.setColorAt(1.0, QColor(23, 25, 28, 255))
-            p.fillRect(0, 0, w, art_h, fade)
-            side = QLinearGradient(0, 0, w, 0)
-            side.setColorAt(0.0, QColor(23, 25, 28, 230))
-            side.setColorAt(0.55, QColor(23, 25, 28, 40))
-            side.setColorAt(1.0, QColor(23, 25, 28, 0))
-            p.fillRect(0, 0, w, art_h, side)
-        else:
-            glow = QRadialGradient(w * 0.8, 0, w * 0.7)
-            glow.setColorAt(0, QColor(255, 255, 255, 10))
-            glow.setColorAt(1, QColor(255, 255, 255, 0))
-            p.fillRect(0, 0, w, h, glow)
+        art_h = int(w * 9 / 16)
+        scaled = self.source.scaled(w, art_h, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                    Qt.TransformationMode.SmoothTransformation)
+        p.setOpacity(0.5)
+        p.drawPixmap(0, 0, scaled)
+        p.setOpacity(1)
+        # Fade the art out downwards and towards the left (where the text is).
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+        down = QLinearGradient(0, 0, 0, art_h)
+        down.setColorAt(0.0, QColor(0, 0, 0, 255))
+        down.setColorAt(0.45, QColor(0, 0, 0, 200))
+        down.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.fillRect(0, 0, w, art_h, down)
+        side = QLinearGradient(0, 0, w, 0)
+        side.setColorAt(0.0, QColor(0, 0, 0, 60))
+        side.setColorAt(0.6, QColor(0, 0, 0, 255))
+        p.fillRect(0, 0, w, art_h, side)
         p.end()
         return pm
 
@@ -257,6 +254,17 @@ class DetailsPage(QWidget):
             kids = []
             if meta.get("type") in ("show", "season", "artist", "album", "collection"):
                 kids = self.app.client.children(self.rating_key)
+            if meta.get("type") in ("episode", "season") and meta.get("grandparentRatingKey" if
+                                                                      meta.get("type") == "episode" else "parentRatingKey"):
+                # Episodes/seasons carry few or no cast entries: add the show's cast after guest stars.
+                show_key = meta.get("grandparentRatingKey") if meta["type"] == "episode" else meta["parentRatingKey"]
+                try:
+                    show = self.app.client.metadata(show_key)
+                except Exception:  # noqa: BLE001 - cast is optional
+                    show = {}
+                own = meta.get("Role") or []
+                names = {r.get("tag") for r in own}
+                meta["Role"] = own + [r for r in show.get("Role") or [] if r.get("tag") not in names]
             return meta, kids
         run_async(load, self._loaded, self._failed)
 

@@ -24,7 +24,7 @@ mock = subprocess.Popen([sys.executable, os.path.join(HERE, "mock_pms.py"), port
                         env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
 time.sleep(3)
 try:
-    env = dict(os.environ, PORT=port, MARQUEE_HOME=home)
+    env = dict(os.environ, PORT=port, EMBER_HOME=home)
     subprocess.run([sys.executable, os.path.join(HERE, "drive.py"), out], env=env, timeout=240)
 finally:
     mock.kill()
@@ -43,6 +43,11 @@ checks = {
     "show page lists seasons": r.get("show200_seasons_row") and r.get("show300_seasons_row"),
     "episode 'Season 1' link opens the season": r.get("season_link_opened") == "210",
     "player opens inside the main window": r.get("player_in_main_window") is True,
+    "keeps playing while browsing (mini player)": r.get("minimized_still_playing") is True
+        and r.get("mini_player_visible") is True and r.get("library_shown_while_playing") is True
+        and r.get("restored_player") is True,
+    "sidebar folds and unfolds": r.get("sidebar_collapsed_width") == 72 and r.get("sidebar_expanded_width") == 248,
+    "episode page shows cast": (r.get("episode_cast_cards") or 0) > 0,
     "controls hidden while playing, shown when paused":
         r.get("controls_hidden_while_playing") is True and r.get("controls_shown_when_paused") is True,
 }

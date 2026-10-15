@@ -1,19 +1,23 @@
-"""Main window: sidebar, top bar with search, page navigation, playback and toasts."""
-from PySide6.QtCore import QPoint, QSize, Qt, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut
+"""Main window: Plex-style top bar and foldable sidebar over a gradient background, page navigation,
+the in-window player and the mini player that keeps playing while you browse."""
+from PySide6.QtCore import (QEasingCurve, QParallelAnimationGroup, QPoint, QPropertyAnimation, QRectF,
+                            QSize, Qt, QTimer)
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
                                QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu,
                                QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget)
 
-from . import icons
+from . import branding, icons, theme
 from .api import QUALITIES
 from .cards import label
 from .config import APP_NAME
 from .details import DetailsPage
 from .login import LoginPage
 from .pages import DownloadsPage, HomePage, LibraryPage, MessagePage, SearchPage
-from .player import PlayerView
+from .player import PlayerView, osd_button, skip_icon
 from .workers import run_async
+
+SIDEBAR_WIDE, SIDEBAR_NARROW = 248, 72
 
 
 class SettingsDialog(QDialog):
@@ -21,7 +25,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.cfg = cfg
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(560)
         form = QFormLayout()
         form.setSpacing(14)
         self.quality = QComboBox()
@@ -29,6 +33,7 @@ class SettingsDialog(QDialog):
             self.quality.addItem(text, qid)
         self.quality.setCurrentIndex(max(0, self.quality.findData(cfg.get("quality", "original"))))
         form.addRow("Default playback quality", self.quality)
+
         self.folder = QLineEdit(cfg.get("download_dir", ""))
         browse = QPushButton("Browse…", objectName="Secondary")
         browse.clicked.connect(self._browse)
@@ -36,8 +41,22 @@ class SettingsDialog(QDialog):
         row.addWidget(self.folder, 1)
         row.addWidget(browse)
         form.addRow("Download folder", row)
-        hint = label("Advanced: put an mpv.conf in the 'mpv' folder of the app's settings directory "
-                     "to customise playback.", "Faint", wrap=True)
+
+        self.font_file = QLineEdit(cfg.get("font_file", ""))
+        self.font_file.setPlaceholderText("Default (Figtree)")
+        pick = QPushButton("Choose…", objectName="Secondary")
+        pick.clicked.connect(self._pick_font)
+        reset = QPushButton("Default", objectName="Secondary")
+        reset.clicked.connect(self.font_file.clear)
+        row = QHBoxLayout()
+        row.addWidget(self.font_file, 1)
+        row.addWidget(pick)
+        row.addWidget(reset)
+        form.addRow("Interface font", row)
+
+        hint = label("A font file (.ttf or .otf) on this computer can replace the interface font; it "
+                     "takes effect the next time Ember starts. Advanced: an mpv.conf in the 'mpv' "
+                     "folder of the settings directory customises playback.", "Faint", wrap=True)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -52,11 +71,112 @@ class SettingsDialog(QDialog):
         if path:
             self.folder.setText(path)
 
+    def _pick_font(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Interface font", "", "Fonts (*.ttf *.otf)")
+        if path:
+            self.font_file.setText(path)
+
     def accept(self):
         self.cfg["quality"] = self.quality.currentData()
         self.cfg["download_dir"] = self.folder.text().strip() or self.cfg["download_dir"]
+        changed_font = self.font_file.text().strip() != self.cfg.get("font_file", "")
+        self.cfg["font_file"] = self.font_file.text().strip()
         self.cfg.save()
+        if changed_font:
+            QMessageBox.information(self, "Interface font", "The new font will be used after you restart Ember.")
         super().accept()
+
+
+class Background(QWidget):
+    """Black with soft corner glows; rendered once per size."""
+
+    def __init__(self):
+        super().__init__(objectName="Root")
+        self.cache = None
+
+    def resizeEvent(self, event):
+        self.cache = None
+
+    def paintEvent(self, event):
+        if self.cache is None or self.cache.size() != self.size():
+            self.cache = theme.render_background(self.width(), self.height())
+        QPainter(self).drawPixmap(0, 0, self.cache)
+
+
+class MiniPlayer(QWidget):
+    """Bottom bar shown while a video keeps playing behind the library (like Plex's mini player)."""
+
+    def __init__(self, window):
+        super().__init__()
+        self.window_ = window
+        self.view = None
+        self.position = self.duration = 0.0
+        self.setFixedHeight(80)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        self.setStyleSheet("MiniPlayer { background: rgba(14,15,18,0.94); border-top: 1px solid rgba(255,255,255,0.07); }")
+        self.thumb = QLabel()
+        self.thumb.setFixedSize(40, 60)
+        self.title = QLabel(objectName="OsdTitle")
+        self.title.setStyleSheet("font-size: 15px;")
+        self.sub = QLabel(objectName="OsdSub")
+        info = QVBoxLayout()
+        info.setSpacing(1)
+        info.addStretch()
+        info.addWidget(self.title)
+        info.addWidget(self.sub)
+        info.addStretch()
+        left = QWidget()
+        left.setCursor(Qt.CursorShape.PointingHandCursor)
+        left.mouseReleaseEvent = lambda e: self.window_.restore_player()
+        lrow = QHBoxLayout(left)
+        lrow.setContentsMargins(0, 0, 0, 0)
+        lrow.setSpacing(12)
+        lrow.addWidget(self.thumb)
+        lrow.addLayout(info, 1)
+        self.play_btn = osd_button("pause", "Play/pause", 34, lambda: self.view and self.view.toggle_pause())
+        center = QHBoxLayout()
+        center.setSpacing(14)
+        center.addWidget(osd_button(skip_icon(10, False, 34), "Back 10 seconds", 30,
+                                    lambda: self.view and self.view.seek_by(-10000)))
+        center.addWidget(self.play_btn)
+        center.addWidget(osd_button(skip_icon(30, True, 34), "Forward 30 seconds", 30,
+                                    lambda: self.view and self.view.seek_by(30000)))
+        right = QHBoxLayout()
+        right.addStretch()
+        right.addWidget(osd_button("fullscreen", "Back to the player", 24, self.window_.restore_player))
+        right.addWidget(osd_button("close", "Stop", 24, lambda: self.view and self.view.stop()))
+        row = QHBoxLayout(self)
+        row.setContentsMargins(20, 8, 18, 6)
+        row.addWidget(left, 1)
+        row.addLayout(center)
+        row.addLayout(right, 1)
+
+    def attach(self, view):
+        self.view = view
+        self.title.setText(view.title.text())
+        self.sub.setText(view.subtitle.text())
+        pm = view.thumb.pixmap()
+        self.thumb.setPixmap(pm.scaled(80, 120, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                       Qt.TransformationMode.SmoothTransformation) if pm and not pm.isNull() else pm)
+        if self.thumb.pixmap() and not self.thumb.pixmap().isNull():
+            self.thumb.pixmap().setDevicePixelRatio(2)
+        self.show()
+
+    def update_state(self, position, duration, paused):
+        self.position, self.duration = position, duration
+        self.play_btn.setIcon(icons.icon("play" if paused else "pause", "#ffffff"))
+        if self.view is not None:
+            self.title.setText(self.view.title.text())
+            self.sub.setText(self.view.subtitle.text())
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.duration:
+            p = QPainter(self)
+            p.fillRect(QRectF(0, 0, self.width(), 3), QColor(255, 255, 255, 40))
+            p.fillRect(QRectF(0, 0, self.width() * min(1.0, self.position / self.duration), 3),
+                       theme.color("accent"))
 
 
 class MainWindow(QMainWindow):
@@ -81,34 +201,41 @@ class MainWindow(QMainWindow):
     # --- shell ----------------------------------------------------------------------
 
     def _show_login(self, choose_server_only=False):
+        if self.player is not None:
+            self.player.stop()
         login = LoginPage(self.client, choose_server_only)
         login.done.connect(self._build_main)
         self.setCentralWidget(login)
 
     def _build_main(self):
-        root = QWidget(objectName="Root")
-        root.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        root = Background()
         self.sidebar = QWidget(objectName="Sidebar")
         self.sidebar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
-        self.sidebar.setFixedWidth(232)
         self.side_box = QVBoxLayout(self.sidebar)
-        self.side_box.setContentsMargins(0, 0, 0, 12)
+        self.side_box.setContentsMargins(0, 10, 0, 12)
         self.side_box.setSpacing(0)
         self.nav = QButtonGroup(self)
         self.nav.setExclusive(True)
+        self.nav_texts = {}
+        collapsed = bool(self.client.cfg.get("sidebar_collapsed"))
+        self.sidebar.setFixedWidth(SIDEBAR_NARROW if collapsed else SIDEBAR_WIDE)
+        self.sidebar.setProperty("collapsed", collapsed)
 
         self.stack = QStackedWidget()
-        content = QVBoxLayout()
-        content.setContentsMargins(0, 0, 0, 0)
-        content.setSpacing(0)
-        content.addWidget(self._top_bar())
-        content.addWidget(self.stack, 1)
-        layout = QHBoxLayout(root)
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+        body.addWidget(self.sidebar)
+        body.addWidget(self.stack, 1)
+        self.mini = MiniPlayer(self)
+        self.mini.hide()
+        layout = QVBoxLayout(root)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self.sidebar)
-        layout.addLayout(content, 1)
-        # The shell swaps between the library UI and the player, inside this same window.
+        layout.addWidget(self._top_bar())
+        layout.addLayout(body, 1)
+        layout.addWidget(self.mini)
+        # The shell swaps between the library UI and the full-size player, inside this same window.
         self.shell = QStackedWidget()
         self.shell.addWidget(root)
         self.setCentralWidget(self.shell)
@@ -132,14 +259,19 @@ class MainWindow(QMainWindow):
         self.show_home()
         self.downloads._start_next()
 
+    # --- sidebar --------------------------------------------------------------------
+
     def _nav_button(self, text, icon_name, slot):
-        b = QPushButton("  " + text)
-        b.setIcon(icons.icon(icon_name, "#a0a4a8", active_color="#ffffff"))
-        b.setIconSize(QSize(20, 20))
+        b = QPushButton()
+        b.setIcon(icons.icon(icon_name, "#c6c9cd", active_color="#ffffff"))
+        b.setIconSize(QSize(22, 22))
         b.setCheckable(True)
         b.setCursor(Qt.CursorShape.PointingHandCursor)
+        b.setToolTip(text)
         b.clicked.connect(slot)
         self.nav.addButton(b)
+        self.nav_texts[b] = text
+        b.setText("" if self.sidebar.property("collapsed") else "   " + text)
         return b
 
     def _fill_sidebar(self, sections):
@@ -148,23 +280,57 @@ class MainWindow(QMainWindow):
             if w:
                 if isinstance(w, QPushButton):
                     self.nav.removeButton(w)
+                    self.nav_texts.pop(w, None)
                 w.deleteLater()
-        self.side_box.addWidget(label(APP_NAME, "Brand"))
         self.home_btn = self._nav_button("Home", "home", self.show_home)
         self.home_btn.setEnabled(not self.offline)
         self.side_box.addWidget(self.home_btn)
         self.section_buttons = {}
+        self.heading = label("LIBRARIES", "SidebarHeading")
         if sections:
-            self.side_box.addWidget(label("LIBRARIES", "SidebarHeading"))
+            self.side_box.addWidget(self.heading)
             for s in sections:
                 b = self._nav_button(s["title"], icons.section_icon(s.get("type")),
                                      lambda _=False, s=s: self.show_section(s))
                 self.section_buttons[s["key"]] = b
                 self.side_box.addWidget(b)
+        self.heading.setVisible(bool(sections) and not self.sidebar.property("collapsed"))
         self.side_box.addStretch()
         self.dl_btn = self._nav_button("Downloads", "download", self.show_downloads)
         self.side_box.addWidget(self.dl_btn)
         self._sync_sidebar()
+
+    def toggle_sidebar(self):
+        collapsed = not self.sidebar.property("collapsed")
+        self.client.cfg["sidebar_collapsed"] = collapsed
+        self.client.cfg.save()
+        start, end = self.sidebar.width(), SIDEBAR_NARROW if collapsed else SIDEBAR_WIDE
+        self.sidebar.setMinimumWidth(0)
+        self.sidebar.setMaximumWidth(16777215)
+        group = QParallelAnimationGroup(self)
+        for prop in (b"minimumWidth", b"maximumWidth"):
+            anim = QPropertyAnimation(self.sidebar, prop)
+            anim.setDuration(220)
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            anim.setStartValue(start)
+            anim.setEndValue(end)
+            group.addAnimation(anim)
+        if collapsed:  # hide labels first so they don't squash while shrinking
+            self._apply_collapsed(True)
+        else:
+            group.finished.connect(lambda: self._apply_collapsed(False))
+        group.start(QParallelAnimationGroup.DeletionPolicy.DeleteWhenStopped)
+
+    def _apply_collapsed(self, collapsed):
+        self.sidebar.setProperty("collapsed", collapsed)
+        for b, text in self.nav_texts.items():
+            b.setText("" if collapsed else "   " + text)
+        self.heading.setVisible(bool(self.section_buttons) and not collapsed)
+        self.sidebar.style().unpolish(self.sidebar)
+        self.sidebar.style().polish(self.sidebar)
+        for b in self.nav_texts:
+            b.style().unpolish(b)
+            b.style().polish(b)
 
     def _sync_sidebar(self):
         """Highlight the sidebar entry for the root page currently shown."""
@@ -176,38 +342,47 @@ class MainWindow(QMainWindow):
         elif isinstance(root, LibraryPage) and root.section["key"] in self.section_buttons:
             self.section_buttons[root.section["key"]].setChecked(True)
 
+    # --- top bar --------------------------------------------------------------------
+
+    def _icon_button(self, name, tip, slot, size=22):
+        b = QPushButton(objectName="IconButton")
+        b.setIcon(icons.icon(name, "#d0d3d6", active_color="#ffffff"))
+        b.setIconSize(QSize(size, size))
+        b.setToolTip(tip)
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        b.clicked.connect(slot)
+        return b
+
     def _top_bar(self):
         bar = QWidget(objectName="TopBar")
         bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
-        bar.setFixedHeight(60)
+        bar.setFixedHeight(64)
         row = QHBoxLayout(bar)
-        row.setContentsMargins(16, 0, 20, 0)
-        row.setSpacing(12)
-        self.back_btn = QPushButton(objectName="IconButton")
-        self.back_btn.setIcon(icons.icon("back", "#cccccc", active_color="#ffffff"))
-        self.back_btn.setIconSize(QSize(22, 22))
-        self.back_btn.setToolTip("Back (Alt+←)")
-        self.back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.back_btn.clicked.connect(self.back)
+        row.setContentsMargins(14, 0, 20, 0)
+        row.setSpacing(10)
+        row.addWidget(self._icon_button("menu", "Show or hide the sidebar", self.toggle_sidebar, 24))
+        logo = QLabel()
+        logo.setPixmap(branding.wordmark_pixmap(28, theme.FONT if theme.FONT else "Figtree"))
+        logo.setCursor(Qt.CursorShape.PointingHandCursor)
+        logo.mouseReleaseEvent = lambda e: (not self.offline) and self.show_home()
+        row.addWidget(logo)
+        row.addSpacing(28)
+        self.back_btn = self._icon_button("back", "Back (Alt+←)", self.back)
         row.addWidget(self.back_btn)
         self.search = QLineEdit(objectName="Search")
         self.search.setPlaceholderText("Search")
-        self.search.setFixedWidth(380)
-        self.search.addAction(icons.icon("search", "#9a9a9a"), QLineEdit.ActionPosition.LeadingPosition)
+        self.search.setFixedWidth(420)
+        self.search.addAction(icons.icon("search", "#a6a6a6"), QLineEdit.ActionPosition.LeadingPosition)
         self.search.setClearButtonEnabled(True)
         self.search.returnPressed.connect(self._search)
         row.addWidget(self.search)
         row.addStretch()
-        self.offline_badge = QLabel("  OFFLINE — DOWNLOADS ONLY", objectName="OfflineBadge")
+        self.offline_badge = QLabel("OFFLINE — DOWNLOADS ONLY", objectName="OfflineBadge")
         self.offline_badge.hide()
         row.addWidget(self.offline_badge)
         self.server_label = label("", "Muted")
         row.addWidget(self.server_label)
-        account = QPushButton(objectName="IconButton")
-        account.setIcon(icons.icon("person", "#cccccc", active_color="#ffffff"))
-        account.setIconSize(QSize(24, 24))
-        account.setCursor(Qt.CursorShape.PointingHandCursor)
-        account.clicked.connect(lambda: self._account_menu(account))
+        account = self._icon_button("person", "Account and settings", lambda: self._account_menu(account), 26)
         row.addWidget(account)
         return bar
 
@@ -240,6 +415,8 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(page)
         self.stack.setCurrentWidget(page)
         self.back_btn.setEnabled(len(self.history) > 1)
+        if self.player is not None and self.shell.currentWidget() is self.player:
+            self.minimize_player()  # opening something from the player keeps it playing
 
     def back(self):
         if len(self.history) <= 1:
@@ -250,8 +427,8 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.history[-1])
         self.back_btn.setEnabled(len(self.history) > 1)
         current = self.history[-1]
-        if hasattr(current, "refresh") and isinstance(current, DetailsPage):
-            current.refresh()  # pick up watched/progress changes
+        if isinstance(current, DetailsPage):
+            current.refresh()  # pick up watched/progress changes (no rebuild if unchanged)
 
     def _backspace(self):
         if not self.search.hasFocus():
@@ -310,6 +487,9 @@ class MainWindow(QMainWindow):
             self.was_maximized = self.isMaximized()
             self.player = PlayerView(self, full, media_index, start, local)
             self.player.closed.connect(self._player_closed)
+            self.player.minimize_requested.connect(self.minimize_player)
+            self.player.progress.connect(self.mini.update_state)
+            self.mini.hide()
             self.shell.addWidget(self.player)
             self.shell.setCurrentWidget(self.player)
             self.player.setFocus()
@@ -322,6 +502,21 @@ class MainWindow(QMainWindow):
             run_async(lambda: self.client.metadata(meta["ratingKey"]), launch,
                       lambda e: self.toast(f"Couldn't start playback: {e}"))
 
+    def minimize_player(self):
+        """Keep the video playing and show the library with a mini player at the bottom."""
+        if self.player is None:
+            return
+        self.set_fullscreen(False)
+        self.shell.setCurrentIndex(0)
+        self.mini.attach(self.player)
+
+    def restore_player(self):
+        if self.player is not None:
+            self.mini.hide()
+            self.shell.setCurrentWidget(self.player)
+            self.player.setFocus()
+            self.player.show_controls()
+
     def set_fullscreen(self, on):
         if on and not self.isFullScreen():
             self.showFullScreen()
@@ -330,6 +525,8 @@ class MainWindow(QMainWindow):
 
     def _player_closed(self, rating_key, position):
         view, self.player = self.player, None
+        self.mini.hide()
+        self.mini.view = None
         self.set_fullscreen(False)
         self.shell.setCurrentIndex(0)
         if view is not None:
@@ -351,7 +548,8 @@ class MainWindow(QMainWindow):
     def toast(self, text):
         self._toast.setText(text)
         self._toast.adjustSize()
-        self._toast.move((self.width() - self._toast.width()) // 2, self.height() - self._toast.height() - 30)
+        bottom = 30 + (self.mini.height() if getattr(self, "mini", None) and self.mini.isVisible() else 0)
+        self._toast.move((self.width() - self._toast.width()) // 2, self.height() - self._toast.height() - bottom)
         self._toast.raise_()
         self._toast.show()
         self._toast_timer.start()

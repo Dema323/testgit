@@ -1,10 +1,10 @@
 """First-run sign-in (plex.tv PIN flow in the browser) and server selection."""
 from PySide6.QtCore import QTimer, QUrl, Qt, Signal
-from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QPushButton, QVBoxLayout, QWidget
+from PySide6.QtGui import QDesktopServices, QPainter
+from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
+from . import branding, theme
 from .cards import label
-from .config import APP_NAME
 from .workers import run_async
 
 
@@ -24,6 +24,7 @@ class LoginPage(QWidget):
         outer.addStretch()
         outer.addWidget(card, 0, Qt.AlignmentFlag.AlignHCenter)
         outer.addStretch(2)
+        self.background = None
         self.poll = QTimer(self, interval=2000, timeout=self._check)
         self.pin = None
         if choose_server_only:
@@ -31,15 +32,21 @@ class LoginPage(QWidget):
         else:
             self._welcome()
 
+    def paintEvent(self, event):
+        if self.background is None or self.background.size() != self.size():
+            self.background = theme.render_background(self.width(), self.height())
+        QPainter(self).drawPixmap(0, 0, self.background)
+
     def _reset(self):
         while self.box.count():
             w = self.box.takeAt(0).widget()
             if w:
                 w.deleteLater()
-        brand = label(APP_NAME, "Brand")
-        brand.setStyleSheet("font-size: 40px; padding: 0;")
+        brand = QLabel()
+        brand.setPixmap(branding.wordmark_pixmap(56, theme.FONT))
         brand.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.box.addWidget(brand)
+        self.box.addSpacing(10)
 
     def _text(self, text, name="Muted"):
         lab = label(text, name, wrap=True)
