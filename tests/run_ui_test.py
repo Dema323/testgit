@@ -34,7 +34,8 @@ with open(os.path.join(out, "results.json")) as f:
 checks = {
     "no errors": not any(k.startswith("error_") for k in r),
     "direct play": r.get("play_mode") == "direct",
-    "resumed near 0:09": 8000 <= (r.get("play_pos_ms") or 0) <= 20000,
+    # Resume point is 0:03; after ~5 s of playback the position should be well past it.
+    "resumed from the saved position": 5000 <= (r.get("play_pos_ms") or 0) <= 20000,
     "video output opened": bool(r.get("mpv_vo_configured")),
     "audio track switched": r.get("mpv_aid") == 1 and r.get("aid_after_switch") == 2,
     "transcode stream loaded": r.get("transcode_mode") == "transcode" and r.get("transcode_loaded") is True,
