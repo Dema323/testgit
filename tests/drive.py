@@ -165,6 +165,11 @@ def playing():
     results["mpv_hwdec"] = p.player.hwdec_current
     results["mpv_vo_configured"] = p.player.vo_configured
     results["player_in_main_window"] = p.window() is win
+    results["controls_hidden_while_playing"] = not p.controls_visible
+    p.player.pause = True
+    p._tick()
+    results["controls_shown_when_paused"] = p.controls_visible
+    p.player.pause = False
     player_shot("8-player", p)
     p.toggle_panel()
     player_shot("8b-player-settings", p)

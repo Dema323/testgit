@@ -151,7 +151,7 @@ QProgressBar::chunk {{ background: {ACCENT}; border-radius: 2px; }}
 #OsdButton {{ border-radius: 22px; padding: 8px; }}
 #OsdButton:hover {{ background: rgba(255,255,255,0.14); }}
 #OsdButton:checked {{ background: rgba(255,255,255,0.18); }}
-#Panel {{ background: rgba(18,19,22,0.97); border-radius: 10px; }}
+#Panel {{ background: rgba(18,19,22,0.78); border-radius: 10px; }}
 #PanelTitle {{ font-size: 13px; font-weight: 700; color: {TEXT_FAINT}; letter-spacing: 1px; }}
 #PanelItem {{ text-align: left; padding: 9px 14px; border-radius: 6px; font-size: 15px; font-weight: 500;
               color: rgba(255,255,255,0.82); }}

@@ -27,7 +27,7 @@ from .workers import run_async
 
 REPORT_INTERVAL = 10
 WATCHED_FRACTION = 0.9
-HIDE_AFTER = 3.0
+HIDE_AFTER = 2.5  # seconds without mouse movement before controls fade while playing
 
 
 def load_mpv():
@@ -181,13 +181,13 @@ class Controls(QWidget):
         p = QPainter(self)
         h = self.height()
         top = QLinearGradient(0, 0, 0, 140)
-        top.setColorAt(0, QColor(0, 0, 0, 170))
+        top.setColorAt(0, QColor(0, 0, 0, 110))
         top.setColorAt(1, QColor(0, 0, 0, 0))
         p.fillRect(0, 0, self.width(), 140, top)
         bottom = QLinearGradient(0, h - 230, 0, h)
         bottom.setColorAt(0, QColor(0, 0, 0, 0))
-        bottom.setColorAt(0.55, QColor(0, 0, 0, 170))
-        bottom.setColorAt(1, QColor(0, 0, 0, 225))
+        bottom.setColorAt(0.55, QColor(0, 0, 0, 95))
+        bottom.setColorAt(1, QColor(0, 0, 0, 150))
         p.fillRect(0, h - 230, self.width(), 230, bottom)
 
 
@@ -223,6 +223,9 @@ class Overlay(QWidget):
 
     def wheelEvent(self, e):
         self.view.change_volume(5 if e.angleDelta().y() > 0 else -5)
+
+    def leaveEvent(self, e):
+        self.view.maybe_hide_controls()
 
 
 class PlayerView(QWidget):
@@ -409,7 +412,8 @@ class PlayerView(QWidget):
             return
         self.load(*self.pending)
         self.timer.start()
-        self.show_controls()
+        self.controls_visible = False
+        self._fade_to(0.0, False)  # controls appear on hover or when paused
 
     def _create_mpv(self):
         mpv = load_mpv()
@@ -575,13 +579,25 @@ class PlayerView(QWidget):
         self._autohide(paused)
 
     def _autohide(self, paused):
+        """Controls show while paused or while the mouse moves over the video; otherwise they fade."""
         pos = QCursor.pos()
+        hovering = self.overlay.isVisible() and self.overlay.geometry().contains(pos)
+        if paused:
+            if not self.controls_visible:
+                self.show_controls()
+            return
         if pos != self.last_cursor:
             self.last_cursor = pos
-            if self.overlay.geometry().contains(pos):
+            if hovering:
                 self.show_controls()
-        elif (self.controls_visible and not paused and not self.panel.isVisible()
-              and time.monotonic() - self.last_move > HIDE_AFTER):
+        idle = time.monotonic() - self.last_move
+        # Off the video: keep a brief flash for keyboard actions (seek/volume), then fade.
+        if self.controls_visible and not self.panel.isVisible() and (
+                idle > HIDE_AFTER or (not hovering and idle > 1.5)):
+            self.hide_controls()
+
+    def maybe_hide_controls(self):
+        if self.player is not None and not self.player.pause and not self.panel.isVisible():
             self.hide_controls()
 
     def show_controls(self, animate=True):
