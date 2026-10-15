@@ -36,26 +36,36 @@ Marquee is an independent project and is not affiliated with or endorsed by Plex
   - Player: `Space` play/pause; `←` / `→` jump back 10 s / forward 30 s; `↑` / `↓` volume;
     `F` fullscreen; `Esc` leave fullscreen or close.
 
+## Download
+
+Get **Marquee.exe** from the repository's *Releases* page ("Marquee (latest build)"), or directly:
+`https://github.com/<owner>/<repo>/releases/download/latest-build/Marquee.exe`.
+
+It is a single file: no installer, no unzipping and nothing else to install. It needs
+Windows 10 or 11, 64-bit. The exe isn't code-signed, so the first time you run it Windows
+SmartScreen may show "Windows protected your PC": click **More info → Run anyway**.
+
 ## Build the Windows exe
 
-Push this folder to a GitHub repository. The workflow in `.github/workflows/build-windows.yml`
-runs on every push to `main`:
+`.github/workflows/build-windows.yml` runs on every push to `main`:
 
-1. Installs the dependencies.
-2. Downloads `libmpv-2.dll` from
+1. Downloads `libmpv-2.dll` from
    [shinchiro/mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake/releases).
-3. Builds `Marquee.exe` with PyInstaller.
-4. Uploads `Marquee-windows-x64.zip` as a build artifact.
+2. Builds the single-file `Marquee.exe` with PyInstaller.
+3. Launches the exe to check it starts.
+4. Runs `tests/run_ui_test.py`, which drives the real app against a mock Plex server and
+   checks playback, audio switching, transcoding and downloads using real Windows video output.
+5. Publishes the exe to the `latest-build` release.
 
-Pushing a tag such as `v0.1.0` also attaches the zip to a GitHub release.
+Pushing a tag such as `v0.1.0` creates a versioned release instead.
 
-To build on a Windows machine yourself:
+To build on Windows yourself:
 
 ```powershell
 pip install -r requirements.txt pyinstaller
 # put libmpv-2.dll (from an mpv-dev-x86_64 build) in this folder, then:
 pyinstaller marquee.spec --noconfirm
-dist\Marquee\Marquee.exe
+dist\Marquee.exe
 ```
 
 ## Run from source
@@ -75,6 +85,7 @@ Settings and data live in `%APPDATA%\Marquee` on Windows or `~/.config/marquee` 
 - `config.json`: your sign-in token and preferences. Keep it private.
 - `downloads.json` and `downloads-art/`: the offline download index and artwork.
 - `cache/images/`: cached posters.
+- `error.log`: written if the app hits an unexpected error. Please include it in bug reports.
 - `mpv/mpv.conf`: optional extra mpv options, for example `scale=ewa_lanczossharp` or
   HDR tone-mapping settings. Lua scripts can go in `mpv/scripts/`.
 

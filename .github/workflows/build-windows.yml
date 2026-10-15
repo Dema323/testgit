@@ -13,9 +13,9 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -32,28 +32,55 @@ jobs:
           7z e mpv-dev.7z libmpv-2.dll -r -y
           ls -la libmpv-2.dll
 
-      - name: Build
+      - name: Build single-file exe
         run: pyinstaller marquee.spec --noconfirm
 
-      - name: Smoke test (imports, libmpv loads)
+      - name: Launch test (the exe starts and stays up)
+        shell: pwsh
+        run: |
+          Get-Item dist\Marquee.exe | Select-Object Name, Length
+          $p = Start-Process dist\Marquee.exe -PassThru
+          Start-Sleep -Seconds 30
+          if ($p.HasExited) { Write-Error "Marquee.exe exited with code $($p.ExitCode)"; exit 1 }
+          Stop-Process -Id $p.Id -Force
+          $log = Join-Path $env:APPDATA "Marquee\error.log"
+          if (Test-Path $log) { Get-Content $log; Write-Error "error.log was written"; exit 1 }
+          "Marquee.exe started and kept running."
+
+      - name: Playback test (real Windows video output, mock Plex server)
         shell: bash
         run: |
-          python -c "import os,sys; os.environ['PATH']=os.getcwd()+os.pathsep+os.environ['PATH']; import mpv; print('libmpv OK')"
-          test -f dist/Marquee/Marquee.exe
-          test -f dist/Marquee/_internal/libmpv-2.dll
+          export PATH="$(pwd):$PATH"   # libmpv-2.dll
+          python tests/run_ui_test.py ui-test
 
-      - name: Zip
-        shell: pwsh
-        run: Compress-Archive -Path dist/Marquee/* -DestinationPath Marquee-windows-x64.zip
-
-      - uses: actions/upload-artifact@v4
+      - name: Upload test screenshots
+        if: always()
+        uses: actions/upload-artifact@v5
         with:
-          name: Marquee-windows-x64
-          path: Marquee-windows-x64.zip
+          name: ui-test
+          path: |
+            ui-test/*.png
+            ui-test/results.json
 
-      - name: Attach to release (tag builds)
+      - uses: actions/upload-artifact@v5
+        with:
+          name: Marquee-exe
+          path: dist/Marquee.exe
+
+      - name: Publish download (latest build)
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest-build --yes --cleanup-tag || true
+          gh release create latest-build dist/Marquee.exe --target "$GITHUB_SHA" --latest \
+            --title "Marquee (latest build)" \
+            --notes "Download **Marquee.exe** below and double-click it. Windows 10/11, 64-bit. Built from ${GITHUB_SHA::7}."
+
+      - name: Publish release (version tags)
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" Marquee-windows-x64.zip --generate-notes || gh release upload "${GITHUB_REF_NAME}" Marquee-windows-x64.zip --clobber
+        run: gh release create "${GITHUB_REF_NAME}" dist/Marquee.exe --generate-notes || gh release upload "${GITHUB_REF_NAME}" dist/Marquee.exe --clobber

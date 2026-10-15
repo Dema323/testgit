@@ -195,7 +195,8 @@ class PlayerWindow(QWidget):
         os.makedirs(conf_dir, exist_ok=True)
         base = dict(
             wid=str(int(self.video.winId())),
-            vo=os.environ.get("MARQUEE_VO", "gpu-next"),
+            # gpu-next first; the older gpu renderer is the fallback for old GPUs, VMs and RDP.
+            vo=os.environ.get("MARQUEE_VO", "gpu-next,gpu,"),
             hwdec="auto-safe",
             keep_open="yes",
             osc=False, input_default_bindings=False, input_vo_keyboard=False, input_cursor=False,
