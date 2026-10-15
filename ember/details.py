@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QComboBox, QGridLayout, QHBoxLayout, QLabel, QPus
 
 from . import icons, theme
 from .api import PLAYABLE, fmt_clock, fmt_duration, streams, video_badges
-from .cards import HubRow, SkeletonRow, SmoothScroll, label
+from .cards import HubRow, LinkLabel, SkeletonRow, SmoothScroll, episode_links_html, label
 from .config import log_error
 from .images import ImageLoader
 from .workers import run_async
@@ -106,8 +106,7 @@ class EpisodeRow(QWidget):
         if m.get("viewOffset") and m.get("duration"):
             meta.append(f"{fmt_clock(m['duration'] - m['viewOffset'])} left")
         text.addWidget(label(" · ".join(x for x in meta if x), "Muted"))
-        summary = label(m.get("summary", ""), "Muted", wrap=True)
-        summary.setStyleSheet("color: rgba(255,255,255,0.7);")
+        summary = label(m.get("summary", ""), "EpSummary", wrap=True)
         summary.setMaximumHeight(64)
         text.addWidget(summary)
         text.addStretch()
@@ -373,8 +372,8 @@ class DetailsPage(QWidget):
         if kind in ("show", "season"):
             nxt = self._up_next()
             if nxt is not None and nxt.get("type") == "episode":
-                col.addWidget(label(f"Up next: S{nxt.get('parentIndex', '')} · E{nxt.get('index', '')} — "
-                                    f"{nxt.get('title', '')}", "Muted"))
+                col.addWidget(LinkLabel("Up next: " + episode_links_html(nxt),
+                                        lambda key: self.app.open_key(key)))
 
         col.addSpacing(10)
         col.addLayout(self._actions())
@@ -438,6 +437,8 @@ class DetailsPage(QWidget):
             watched = bool(m.get("viewCount"))
         else:
             watched = m.get("leafCount") is not None and m.get("leafCount") == m.get("viewedLeafCount")
+        if kind in ("show", "season"):
+            row.addWidget(round_button("shuffle", "Shuffle all episodes", lambda: self.app.shuffle(m)))
         if kind not in ("artist", "album", "collection"):
             self.watched_btn = round_button("check", "Mark as unwatched" if watched else "Mark as watched",
                                             self._toggle_watched, checkable=True, checked=watched)

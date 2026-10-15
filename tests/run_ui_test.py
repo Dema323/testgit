@@ -52,6 +52,12 @@ checks = {
     "show artwork fills the window": r.get("show_art_fills_window") is True,
     "player controls take < 15% of the height": 0 < (r.get("controls_height_fraction") or 1) < 0.15,
     "own title bar on Windows": r.get("frameless") is True or sys.platform != "win32",
+    "'S1' on an episode card opens the season": r.get("card_season_link_opened") == "210"
+        and r.get("card_links") == ["show", "season", "episode"],
+    "shuffle plays a random queue of the show": r.get("shuffle_playing_episode") is True
+        and r.get("shuffle_queue_left") == 11,
+    "UI never freezes > 250 ms while resizing during playback":
+        0 < (r.get("ui_worst_freeze_ms_during_resize") or 10 ** 6) < 250 and r.get("playing_after_resize") is True,
     "controls hidden while playing, shown when paused":
         r.get("controls_hidden_while_playing") is True and r.get("controls_shown_when_paused") is True,
 }

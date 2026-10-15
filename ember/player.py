@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (QButtonGroup, QGraphicsOpacityEffect, QHBoxLayout
 from . import icons, theme
 from .chrome import FRAMELESS, WindowButtons, start_move, toggle_maximized
 from .api import QUALITIES, fmt_clock, streams
+from .cards import LinkLabel, episode_links_html
 from .config import data_dir
 from .images import ImageLoader
 from .workers import run_async
@@ -239,9 +240,10 @@ class PlayerView(QWidget):
     minimize_requested = Signal()  # back/Esc: keep playing, show the library with a mini player
     progress = Signal(float, float, bool)  # position ms, duration ms, paused
 
-    def __init__(self, app, meta, media_index=0, start_ms=0, local_file=None):
+    def __init__(self, app, meta, media_index=0, start_ms=0, local_file=None, queue=None):
         super().__init__()
         self.app = app
+        self.queue = list(queue or [])  # rating keys to play next (shuffle)
         self.client, self.downloads = app.client, app.downloads
         self.setStyleSheet("PlayerView { background: black; }")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
@@ -265,6 +267,10 @@ class PlayerView(QWidget):
         app.installEventFilter(self)
 
         self.timer = QTimer(self, interval=250, timeout=self._tick)
+        # While the window is being resized the overlay is hidden and re-placed once it settles:
+        # resizing a full-size translucent window on every step is what made resizing stutter.
+        self.settle = QTimer(self, singleShot=True, interval=180, timeout=self._place_overlay)
+        self.props = {}  # latest mpv property values, pushed from mpv's event thread
         self.last_cursor = QCursor.pos()
         self.last_move = time.monotonic()
         self.controls_visible = True
@@ -313,7 +319,8 @@ class PlayerView(QWidget):
         self.thumb = QLabel()
         self.thumb.setFixedSize(36, 54)
         self.title = QLabel(objectName="OsdTitle")
-        self.subtitle = QLabel(objectName="OsdSub")
+        # "S9 · E9" links: open the season/episode (the video keeps playing in the mini player)
+        self.subtitle = LinkLabel("", lambda key: self.app.open_key(key), "OsdSub")
         info = QVBoxLayout()
         info.setSpacing(0)
         info.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -388,15 +395,24 @@ class PlayerView(QWidget):
     # --- overlay placement ----------------------------------------------------------------
 
     def eventFilter(self, obj, event):
-        if event.type() in (QEvent.Type.Move, QEvent.Type.Resize, QEvent.Type.WindowStateChange,
-                            QEvent.Type.Show):
+        t = event.type()
+        if t == QEvent.Type.Move:
+            if self.overlay.isVisible() and not self.settle.isActive():
+                self.overlay.move(self.mapToGlobal(QPoint(0, 0)))  # cheap: no repaint
+        elif t in (QEvent.Type.Resize, QEvent.Type.WindowStateChange):
+            self._defer_overlay()
+        elif t == QEvent.Type.Show:
             QTimer.singleShot(0, self._place_overlay)
-        elif event.type() == QEvent.Type.Hide:
+        elif t == QEvent.Type.Hide:
             self.overlay.hide()
         return False
 
+    def _defer_overlay(self):
+        self.overlay.hide()
+        self.settle.start()
+
     def resizeEvent(self, event):
-        self._place_overlay()
+        self._defer_overlay()
 
     def showEvent(self, event):
         QTimer.singleShot(0, self._place_overlay)
@@ -423,6 +439,9 @@ class PlayerView(QWidget):
         except Exception as e:  # noqa: BLE001 - missing libmpv etc.
             self.status.setText(f"Video player unavailable: {e}")
             return
+        for name in ("time-pos", "pause", "eof-reached", "idle-active", "paused-for-cache", "seeking",
+                     "demuxer-cache-time", "duration", "track-list"):
+            self.player.observe_property(name, self._on_prop)
         self.load(*self.pending)
         self.timer.start()
         self.controls_visible = False
@@ -454,6 +473,9 @@ class PlayerView(QWidget):
         except Exception:  # noqa: BLE001 - older libmpv without these options
             return mpv.MPV(**base)
 
+    def _on_prop(self, name, value):
+        self.props[name] = value  # runs on mpv's thread; just store it
+
     def load(self, meta, media_index=0, start_ms=0, local_file=None):
         self.meta = meta
         self.media_index = media_index
@@ -474,12 +496,12 @@ class PlayerView(QWidget):
         kind = meta.get("type")
         if kind == "episode":
             self.title.setText(meta.get("grandparentTitle", ""))
-            self.subtitle.setText(f"S{meta.get('parentIndex', '')} · E{meta.get('index', '')}  —  {meta.get('title', '')}")
+            self.subtitle.setText(episode_links_html(meta, color="rgba(255,255,255,0.75)"))
         else:
             self.title.setText(meta.get("title", ""))
             self.subtitle.setText(str(meta.get("year", "")) if kind == "movie" else meta.get("grandparentTitle", ""))
         self.top_title.setText(self.title.text())
-        self.next_btn.setVisible(kind == "episode" and not local_file)
+        self.next_btn.setVisible((kind == "episode" or bool(self.queue)) and not local_file)
         self.thumb.clear()
         thumb = meta.get("_poster") or (meta.get("grandparentThumb") if kind == "episode" else meta.get("thumb"))
         if ImageLoader.instance() and thumb:
@@ -489,6 +511,8 @@ class PlayerView(QWidget):
     def _start_stream(self, pos_ms):
         self._stop_transcode()
         self.loaded = False
+        for stale in ("track-list", "eof-reached", "time-pos"):
+            self.props.pop(stale, None)
         self.started_at = time.monotonic()
         self.offset_ms = 0
         self.relative = None
@@ -526,7 +550,7 @@ class PlayerView(QWidget):
     def _apply_tracks(self):
         if self.mode == "transcode":
             return  # the server already picked audio and burned in subtitles
-        tracks = self.player.track_list or []
+        tracks = self.props.get("track-list") or []
 
         def mpv_id(plex_stream, kind):
             index = plex_stream.get("index")
@@ -550,20 +574,21 @@ class PlayerView(QWidget):
     def _tick(self):
         if self.closing or self.player is None:
             return
-        try:
-            tp = self.player.time_pos
-            paused = bool(self.player.pause)
-            eof = bool(self.player.eof_reached)
-            idle = bool(self.player.idle_active)
-            buffering = bool(self.player.paused_for_cache) or bool(self.player.seeking)
-            cache = self.player.demuxer_cache_time
-            if not self.loaded and self.player.track_list:
-                self.loaded = True
-                if not self.duration_ms and self.player.duration:
-                    self.duration_ms = self.player.duration * 1000
+        pr = self.props
+        tp = pr.get("time-pos")
+        paused = bool(pr.get("pause"))
+        eof = bool(pr.get("eof-reached"))
+        idle = bool(pr.get("idle-active"))
+        buffering = bool(pr.get("paused-for-cache")) or bool(pr.get("seeking"))
+        cache = pr.get("demuxer-cache-time")
+        if not self.loaded and pr.get("track-list"):
+            self.loaded = True
+            if not self.duration_ms and pr.get("duration"):
+                self.duration_ms = pr["duration"] * 1000
+            try:
                 self._apply_tracks()
-        except Exception:  # noqa: BLE001 - mpv shut down underneath us
-            return
+            except Exception:  # noqa: BLE001 - mpv shut down underneath us
+                return
         base = 0
         if tp is not None:
             if self.mode == "transcode":
@@ -613,7 +638,7 @@ class PlayerView(QWidget):
             self.hide_controls()
 
     def maybe_hide_controls(self):
-        if self.player is not None and not self.player.pause and not self.panel.isVisible():
+        if self.player is not None and not self.props.get("pause") and not self.panel.isVisible():
             self.hide_controls()
 
     def show_controls(self, animate=True):
@@ -652,7 +677,7 @@ class PlayerView(QWidget):
 
     def _finished(self):
         self._report("stopped")
-        if self.meta.get("type") == "episode" and not self.local_file:
+        if (self.meta.get("type") == "episode" or self.queue) and not self.local_file:
             self.play_next()
         else:
             self.stop()
@@ -661,7 +686,9 @@ class PlayerView(QWidget):
 
     def toggle_pause(self):
         if self.player:
-            self.player.pause = not self.player.pause
+            paused = not self.props.get("pause", False)
+            self.player.pause = paused
+            self.props["pause"] = paused  # update immediately; mpv confirms via the observer
             self.show_controls()
 
     def seek_by(self, delta_ms):
@@ -721,6 +748,13 @@ class PlayerView(QWidget):
 
     def play_next(self):
         meta = self.meta
+        if self.queue:  # shuffle / play queue
+            key = self.queue.pop(0)
+            self.status.setText("Up next…")
+            run_async(lambda: self.client.metadata(key),
+                      lambda m: None if self.closing else (self.status.setText(""), self.load(m, 0, 0)),
+                      lambda e: self.play_next())
+            return
         if meta.get("type") != "episode" or not meta.get("parentRatingKey"):
             self.stop()
             return

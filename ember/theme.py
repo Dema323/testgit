@@ -18,6 +18,7 @@ TEXT_MUTED = "rgba(255,255,255,0.62)"
 TEXT_FAINT = "rgba(255,255,255,0.38)"
 
 FONT = "DM Sans"
+BODY_FONT = "Inter"  # long-form text (summaries, taglines): built for reading paragraphs
 FONT_FAMILIES = [FONT, "Segoe UI", "Helvetica Neue", "Arial"]
 
 # Page background: near-black with four soft corner glows in warm grey-browns (Plex's tone).
@@ -129,8 +130,10 @@ QListView {{ background: transparent; border: none; outline: none; }}
 #DetailTitle {{ font-size: 42px; font-weight: 800; letter-spacing: -0.8px; }}
 #DetailParent {{ font-size: 18px; font-weight: 700; color: {TEXT_MUTED}; }}
 #DetailMeta {{ font-size: 16px; font-weight: 500; color: {TEXT_MUTED}; }}
-#Tagline {{ font-size: 16px; font-style: italic; color: {TEXT_MUTED}; }}
-#Summary {{ font-size: 16px; line-height: 150%; color: rgba(255,255,255,0.88); }}
+#Tagline {{ font-family: "{BODY_FONT}", "Segoe UI"; font-size: 15px; font-style: italic; color: {TEXT_MUTED}; }}
+#Summary {{ font-family: "{BODY_FONT}", "Segoe UI"; font-size: 15px; color: rgba(255,255,255,0.86); }}
+#EpSummary {{ font-family: "{BODY_FONT}", "Segoe UI"; font-size: 14px; color: rgba(255,255,255,0.66); }}
+#EpLinks {{ font-size: 15px; font-weight: 600; color: {TEXT_MUTED}; }}
 #FactLabel {{ color: {TEXT_FAINT}; font-size: 12px; font-weight: 700; letter-spacing: 0.8px; }}
 #FactValue {{ font-size: 14px; font-weight: 500; color: {TEXT_MUTED}; }}
 #Badge {{ border: 1px solid rgba(255,255,255,0.4); border-radius: 3px; padding: 1px 6px;

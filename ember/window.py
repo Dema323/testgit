@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QButtonGroup, QComboBox, QDialog, QDialogButtonBo
 from . import branding, icons, theme
 from .chrome import DragBar, WindowButtons, make_frameless
 from .api import QUALITIES
-from .cards import label
+from .cards import LinkLabel, label
 from .config import APP_NAME
 from .details import DetailsPage
 from .login import LoginPage
@@ -152,7 +152,7 @@ class MiniPlayer(QWidget):
         self.thumb.setFixedSize(40, 60)
         self.title = QLabel(objectName="OsdTitle")
         self.title.setStyleSheet("font-size: 15px;")
-        self.sub = QLabel(objectName="OsdSub")
+        self.sub = LinkLabel("", lambda key: self.window_.open_key(key), "OsdSub")
         info = QVBoxLayout()
         info.setSpacing(1)
         info.addStretch()
@@ -521,7 +521,24 @@ class MainWindow(QMainWindow):
 
     # --- playback -----------------------------------------------------------------
 
-    def play(self, meta, from_start=False, media_index=0, local_only=False):
+    def shuffle(self, meta):
+        """Play every episode of a show/season in random order."""
+        import random
+
+        def build():
+            leaves = [e for e in self.client.all_leaves(meta["ratingKey"]) if e.get("type") == "episode"]
+            random.shuffle(leaves)
+            return leaves
+
+        def go(leaves):
+            if not leaves:
+                self.toast("No episodes to shuffle")
+                return
+            self.play(leaves[0], from_start=True, queue=[e["ratingKey"] for e in leaves[1:]])
+            self.toast(f"Shuffling {len(leaves)} episodes")
+        run_async(build, go, lambda e: self.toast(f"Couldn't shuffle: {e}"))
+
+    def play(self, meta, from_start=False, media_index=0, local_only=False, queue=None):
         local = self.downloads.local_file(meta.get("ratingKey"))
         if local_only and not local:
             self.toast("That download isn't available")
@@ -532,7 +549,7 @@ class MainWindow(QMainWindow):
             if self.player is not None:
                 self.player.stop()
             self.was_maximized = self.isMaximized()
-            self.player = PlayerView(self, full, media_index, start, local)
+            self.player = PlayerView(self, full, media_index, start, local, queue=queue)
             self.player.closed.connect(self._player_closed)
             self.player.minimize_requested.connect(self.minimize_player)
             self.player.progress.connect(self.mini.update_state)

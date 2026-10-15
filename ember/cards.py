@@ -1,7 +1,7 @@
 """Poster cards: list model, painted card delegate, grid and hub views, smooth scrolling, skeletons."""
 from PySide6.QtCore import (QAbstractListModel, QEasingCurve, QEvent, QModelIndex, QObject, QPoint,
                             QPropertyAnimation, QRect, QRectF, QSize, Qt, Signal)
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QCursor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListView, QPushButton, QSizePolicy, QStyle,
                                QStyledItemDelegate, QVBoxLayout, QWidget)
 
@@ -135,6 +135,7 @@ class CardDelegate(QStyledItemDelegate):
         self.view, self.shape, self.context = view, shape, context
         self.title_font = theme.font(14, QFont.Weight.DemiBold)
         self.sub_font = theme.font(13, QFont.Weight.Medium)
+        self.links = {}  # row -> [(QRect, target metadata)] for show / "S9" / "E9" text links
 
     def sizeHint(self, option, index):
         w, h = SHAPES[self.shape]
@@ -179,17 +180,54 @@ class CardDelegate(QStyledItemDelegate):
                 painter.drawEllipse(c, 27, 27)
                 painter.drawPixmap(int(c.x() - 13), int(c.y() - 14), icons.pixmap("play", "#111111", 28))
 
-        painter.setPen(QColor(theme.TEXT))
+        mouse = self.view.viewport().mapFromGlobal(QCursor.pos())
+        links = []
+        title = card_title(m, self.context)
+        title_rect = QRect(int(x), int(y + h + 9), w, 20)
         painter.setFont(self.title_font)
         fm = painter.fontMetrics()
-        painter.drawText(QRect(int(x), int(y + h + 9), w, 20), Qt.AlignmentFlag.AlignLeft,
-                         fm.elidedText(card_title(m, self.context), Qt.TextElideMode.ElideRight, w))
-        painter.setPen(QColor(255, 255, 255, 150))
-        painter.setFont(self.sub_font)
-        fm = painter.fontMetrics()
-        painter.drawText(QRect(int(x), int(y + h + 29), w, 18), Qt.AlignmentFlag.AlignLeft,
-                         fm.elidedText(card_subtitle(m, self.context), Qt.TextElideMode.ElideRight, w))
+        title = fm.elidedText(title, Qt.TextElideMode.ElideRight, w)
+        if m.get("type") == "episode" and self.context != "season" and m.get("grandparentRatingKey"):
+            # Episode cards: show name -> show, "S9" -> season, "E9" -> episode (like Plex)
+            r_show = QRect(title_rect.x(), title_rect.y(), fm.horizontalAdvance(title), 20)
+            links.append((r_show, {"ratingKey": m["grandparentRatingKey"], "type": "show"}))
+            self._link_text(painter, r_show, title, QColor(theme.TEXT), r_show.contains(mouse))
+            painter.setFont(self.sub_font)
+            fm = painter.fontMetrics()
+            sx = int(x)
+            season = f"S{int(m.get('parentIndex') or 0)}"
+            r_s = QRect(sx, int(y + h + 29), fm.horizontalAdvance(season), 18)
+            dot = " · "
+            r_e = QRect(r_s.right() + 1 + fm.horizontalAdvance(dot), r_s.y(),
+                        fm.horizontalAdvance(f"E{int(m.get('index') or 0)}"), 18)
+            muted = QColor(255, 255, 255, 150)
+            if m.get("parentRatingKey"):
+                links.append((r_s, {"ratingKey": m["parentRatingKey"], "type": "season"}))
+            links.append((r_e, {"ratingKey": m["ratingKey"], "type": "episode"}))
+            self._link_text(painter, r_s, season, muted, r_s.contains(mouse))
+            painter.setPen(muted)
+            painter.drawText(QRect(r_s.right() + 1, r_s.y(), 40, 18), Qt.AlignmentFlag.AlignLeft, dot)
+            self._link_text(painter, r_e, f"E{int(m.get('index') or 0)}", muted, r_e.contains(mouse))
+        else:
+            painter.setPen(QColor(theme.TEXT))
+            painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft, title)
+            painter.setPen(QColor(255, 255, 255, 150))
+            painter.setFont(self.sub_font)
+            fm = painter.fontMetrics()
+            painter.drawText(QRect(int(x), int(y + h + 29), w, 18), Qt.AlignmentFlag.AlignLeft,
+                             fm.elidedText(card_subtitle(m, self.context), Qt.TextElideMode.ElideRight, w))
+        self.links[index.row()] = links
         painter.restore()
+
+    @staticmethod
+    def _link_text(painter, rect, text, color, hovered):
+        painter.setPen(QColor(theme.ACCENT) if hovered else color)
+        painter.drawText(rect, Qt.AlignmentFlag.AlignLeft, text)
+        if hovered:
+            painter.drawLine(rect.left(), rect.bottom() - 1, rect.right(), rect.bottom() - 1)
+
+    def link_at(self, row, pos):
+        return next((target for rect, target in self.links.get(row, []) if rect.contains(pos)), None)
 
     def _badges(self, painter, m, img):
         accent = theme.color("accent")
@@ -270,6 +308,19 @@ class CardView(QListView):
         self.clicked.connect(lambda idx: self.opened.emit(idx.data(ITEM)))
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._context)
+
+    def mouseReleaseEvent(self, event):
+        idx = self.indexAt(event.position().toPoint())
+        if idx.isValid() and event.button() == Qt.MouseButton.LeftButton:
+            target = self.card_delegate.link_at(idx.row(), event.position().toPoint())
+            if target is not None:
+                self.opened.emit(target)  # e.g. jump to the season from "S9"
+                return
+        super().mouseReleaseEvent(event)
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        self.viewport().update()  # link hover underline
 
     def _context(self, pos):
         idx = self.indexAt(pos)
@@ -378,6 +429,30 @@ class SkeletonRow(QWidget):
             p.drawRoundedRect(QRectF(x, 40, w, h), RADIUS, RADIUS)
             p.setBrush(QColor(255, 255, 255, 10))
             p.drawRoundedRect(QRectF(x, 40 + h + 12, w * 0.7, 12), 3, 3)
+
+
+def episode_links_html(m, with_title=True, color="rgba(255,255,255,0.75)"):
+    """'S9 · E9 — Title' where S9 links to the season and E9 to the episode."""
+    style = f"color:{color}; text-decoration:none;"
+    season = f"S{int(m.get('parentIndex') or 0)}"
+    if m.get("parentRatingKey"):
+        season = f'<a href="{m["parentRatingKey"]}" style="{style}">{season}</a>'
+    episode = f'<a href="{m.get("ratingKey")}" style="{style}">E{int(m.get("index") or 0)}</a>'
+    title = f" — {m.get('title', '')}" if with_title and m.get("title") else ""
+    return f"{season} · {episode}{title.replace('<', '&lt;')}"
+
+
+class LinkLabel(QLabel):
+    """Rich-text label whose links are rating keys; on_open(rating_key) is called on click."""
+
+    def __init__(self, html="", on_open=None, name="EpLinks"):
+        super().__init__(html)
+        self.setObjectName(name)
+        self.setTextFormat(Qt.TextFormat.RichText)
+        self.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.setOpenExternalLinks(False)
+        if on_open:
+            self.linkActivated.connect(on_open)
 
 
 def label(text, name=None, wrap=False):

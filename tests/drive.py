@@ -94,6 +94,21 @@ def sidebar_collapsed():
 @step(800)
 def sidebar_expanded():
     results["sidebar_expanded_width"] = win.sidebar.width()
+    # Click "S1" under the Continue Watching episode card -> should open Season 1.
+    from PySide6.QtTest import QTest
+    from ember.cards import HubRow
+    row = page().findChildren(HubRow)[0]
+    links = row.view.card_delegate.links.get(0, [])
+    results["card_links"] = [t["type"] for _, t in links]
+    season_rect = next(r for r, t in links if t["type"] == "season")
+    QTest.mouseClick(row.view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                     season_rect.center())
+
+
+@step(2500)
+def season_from_card_link():
+    results["card_season_link_opened"] = getattr(page(), "rating_key", None)
+    win.show_home()
 
 
 @step(200)
@@ -190,10 +205,10 @@ def playing():
     bottom_controls = p.controls.height() - p.seek.mapTo(p.controls, QPoint(0, 0)).y()
     results["controls_height_fraction"] = round(bottom_controls / max(1, p.controls.height()), 3)
     results["controls_hidden_while_playing"] = not p.controls_visible
-    p.player.pause = True
+    p.toggle_pause()
     p._tick()
     results["controls_shown_when_paused"] = p.controls_visible
-    p.player.pause = False
+    p.toggle_pause()
     player_shot("8-player", p)
     p.toggle_panel()
     player_shot("8b-player-settings", p)
@@ -266,6 +281,47 @@ def offline_check():
     results["local_mode"] = p.mode
     results["local_path"] = p.player.path
     p.stop()
+
+
+@step(500)
+def shuffle_show():
+    win.shuffle({"ratingKey": "200", "type": "show"})
+
+
+@step(4000)
+def shuffled():
+    p = win.player
+    results["shuffle_playing_episode"] = p is not None and p.meta.get("type") == "episode"
+    results["shuffle_queue_left"] = len(p.queue) if p else 0
+    # Resize storm while video plays: a 10 ms heartbeat measures how long the UI ever freezes.
+    state = {"last": time.perf_counter(), "worst": 0.0, "n": 0}
+
+    def beat():
+        now = time.perf_counter()
+        state["worst"] = max(state["worst"], now - state["last"])
+        state["last"] = now
+    heart = QTimer(win, interval=10, timeout=beat)
+    heart.start()
+    sizes = [(1440 - 12 * i, 900 - 8 * i) for i in range(20)] + [(1200 + 12 * i, 740 + 8 * i) for i in range(20)]
+
+    def resize_next():
+        if state["n"] < len(sizes):
+            win.resize(*sizes[state["n"]])
+            win.move(40 + state["n"] * 3, 30 + state["n"] * 2)
+            state["n"] += 1
+            QTimer.singleShot(50, resize_next)
+        else:
+            heart.stop()
+            results["ui_worst_freeze_ms_during_resize"] = round(state["worst"] * 1000)
+    resize_next()
+
+
+@step(3500)
+def after_resize_storm():
+    p = win.player
+    results["playing_after_resize"] = p is not None and p.props.get("time-pos") is not None
+    if p:
+        p.stop()
 
 
 @step(800)
