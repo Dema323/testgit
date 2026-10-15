@@ -21,7 +21,7 @@ android {
         create("release") {
             // CI provides the keystore through secrets; local builds fall back to the debug key.
             val ks = System.getenv("EMBER_KEYSTORE")
-            if (ks != null && file(ks).exists()) {
+            if (!ks.isNullOrBlank() && file(ks).exists()) {
                 storeFile = file(ks)
                 storePassword = System.getenv("EMBER_KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("EMBER_KEY_ALIAS") ?: "ember"
