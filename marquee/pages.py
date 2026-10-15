@@ -3,7 +3,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QHBoxLayout, QLabel, QMenu, QPushButton,
                                QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
-from .cards import GridView, HubRow, MediaModel, label, shape_for
+from .cards import GridView, HubRow, MediaModel, SkeletonRow, SmoothScroll, label, shape_for
 from .workers import run_async
 
 SORTS = [("Title", "titleSort"), ("Date added", "addedAt:desc"),
@@ -23,8 +23,23 @@ class ScrollPage(QScrollArea):
         self.body = QWidget(objectName="Page")
         self.box = QVBoxLayout(self.body)
         self.box.setContentsMargins(30, 26, 30, 40)
-        self.box.setSpacing(34)
+        self.box.setSpacing(38)
         self.setWidget(self.body)
+        SmoothScroll(self)
+        self.shown_data = None
+
+    def skeleton(self, shapes=("wide", "poster", "poster")):
+        self.clear()
+        for shape in shapes:
+            self.box.addWidget(SkeletonRow(shape))
+        self.box.addStretch()
+
+    def changed(self, data):
+        """True (and remembered) if data differs from what is on screen."""
+        if data == self.shown_data:
+            return False
+        self.shown_data = data
+        return True
 
     def clear(self):
         while self.box.count():
@@ -62,11 +77,14 @@ class HomePage(ScrollPage):
         self.refresh()
 
     def refresh(self):
-        self.message("Loading…")
+        if self.shown_data is None:
+            self.skeleton()
         run_async(self.app.client.home_hubs, self._loaded,
                   lambda e: self.message(f"Couldn't load your home screen.\n{e}"))
 
     def _loaded(self, hubs):
+        if not self.changed(hubs):
+            return
         self.clear()
         if not hubs:
             self.message("Nothing here yet. Add some media to your Plex libraries.")
@@ -146,9 +164,12 @@ class LibraryPage(QWidget):
             self._load_grid()
 
     def _load_hubs(self, sid):
-        self.recommended.message("Loading…")
+        if self.recommended.shown_data is None:
+            self.recommended.skeleton(("poster", "poster", "poster"))
 
         def loaded(hubs):
+            if not self.recommended.changed(hubs):
+                return
             self.recommended.clear()
             if not hubs:  # no recommendations: go straight to the full library
                 self.tabs.button(1).click()
@@ -191,11 +212,14 @@ class SearchPage(ScrollPage):
         self.refresh()
 
     def refresh(self):
-        self.message("Searching…")
+        if self.shown_data is None:
+            self.skeleton(("poster", "poster"))
         run_async(lambda: self.app.client.search(self.query), self._loaded,
                   lambda e: self.message(f"Search failed.\n{e}"))
 
     def _loaded(self, results):
+        if not self.changed(results):
+            return
         self.clear()
         self.box.addWidget(label(f'Results for "{self.query}"', "PageTitle"))
         if not results:

@@ -42,6 +42,22 @@ def shot(name, widget=None):
     print("shot", name, flush=True)
 
 
+def player_shot(name, p):
+    """Video (native window) plus the controls overlay, composited."""
+    from PySide6.QtGui import QPainter
+    p.show_controls(animate=False)
+    qapp.processEvents()
+    if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+        base = p.grab()
+    else:
+        base = p.screen().grabWindow(int(p.video.winId()))
+    painter = QPainter(base)
+    painter.drawPixmap(0, 0, p.overlay.grab())
+    painter.end()
+    base.save(os.path.join(OUT, name + ".png"))
+    print("shot", name, flush=True)
+
+
 def page():
     return win.history[-1]
 
@@ -87,12 +103,38 @@ def movie_details():
 @step(3000)
 def show_details():
     shot("5-show-details")
+    from marquee.cards import HubRow
+    results["show200_seasons_row"] = bool(page().findChildren(HubRow))
+    win.open_key("300")
+
+
+@step(3000)
+def show_details_dict_ondeck():
+    shot("5b-show-ondeck-object")
+    from marquee.cards import HubRow
+    results["show300_seasons_row"] = bool(page().findChildren(HubRow))
+    results["show300_play_button"] = [b.text() for b in page().findChildren(type(win.back_btn))
+                                      if b.objectName() == "Primary"]
     win.open_key("210")
 
 
 @step(3000)
 def season_details():
     shot("6-season")
+    win.open_key("214")
+
+
+@step(3000)
+def episode_details():
+    shot("6b-episode")
+    links = [b for b in page().findChildren(type(win.back_btn)) if b.objectName() == "Link"]
+    results["episode_links"] = [b.text() for b in links]
+    next(b for b in links if b.text() == "Season 1").click()
+
+
+@step(2500)
+def season_via_link():
+    results["season_link_opened"] = page().meta.get("ratingKey") if getattr(page(), "meta", None) else None
     win.search.setText("the")
     win._search()
 
@@ -122,10 +164,18 @@ def playing():
     results["mpv_vo"] = p.player.current_vo
     results["mpv_hwdec"] = p.player.hwdec_current
     results["mpv_vo_configured"] = p.player.vo_configured
-    shot("8-player", p)
+    results["player_in_main_window"] = p.window() is win
+    player_shot("8-player", p)
+    p.toggle_panel()
+    player_shot("8b-player-settings", p)
+    p.toggle_panel()
     # Ask mpv for what it actually rendered (GPU readback), since screen capture of a
     # Direct3D child window can come back black even when video is showing.
-    p.player.command("screenshot-to-file", os.path.join(OUT, "8-player-mpv-frame.png"), "window")
+    try:
+        p.player.command("screenshot-to-file", os.path.join(OUT, "8-player-mpv-frame.png"), "window")
+        results["mpv_frame_saved"] = True
+    except SystemError:  # no renderer (e.g. vo=null in headless Linux runs)
+        results["mpv_frame_saved"] = False
     p._choose_audio(next(s for s in p.part["Stream"] if s["id"] == 10003))  # Français
 
 
@@ -142,7 +192,7 @@ def transcoding():
     results["transcode_path"] = p.player.path
     results["transcode_pos"] = p.pos_ms
     results["transcode_loaded"] = p.loaded
-    p.close()
+    p.stop()
 
 
 @step(1500)
@@ -168,7 +218,7 @@ def offline_check():
     p = win.player
     results["local_mode"] = p.mode
     results["local_path"] = p.player.path
-    p.close()
+    p.stop()
 
 
 @step(800)

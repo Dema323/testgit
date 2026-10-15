@@ -54,3 +54,16 @@ class Config(dict):
         for key in ("user_token", "server_url", "server_token", "server_name", "server_id"):
             self.pop(key, None)
         self.save()
+
+
+def log_error(context=""):
+    """Append the current exception's traceback to error.log (the exe has no console)."""
+    import datetime
+    import traceback
+    try:
+        with open(os.path.join(data_dir(), "error.log"), "a", encoding="utf-8") as f:
+            f.write(f"\n--- {datetime.datetime.now().isoformat(timespec='seconds')} {context} ---\n")
+            f.write(traceback.format_exc())
+    except OSError:
+        pass
+    traceback.print_exc()

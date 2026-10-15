@@ -1,8 +1,8 @@
-"""Poster cards: a list model, a painted card delegate, grid and horizontal hub views."""
-from PySide6.QtCore import (QAbstractListModel, QModelIndex, QPoint, QRect, QRectF, QSize, Qt,
-                            Signal)
+"""Poster cards: list model, painted card delegate, grid and hub views, smooth scrolling, skeletons."""
+from PySide6.QtCore import (QAbstractListModel, QEasingCurve, QEvent, QModelIndex, QObject, QPoint,
+                            QPropertyAnimation, QRect, QRectF, QSize, Qt, Signal)
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListView, QPushButton, QStyle,
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListView, QPushButton, QSizePolicy, QStyle,
                                QStyledItemDelegate, QVBoxLayout, QWidget)
 
 from . import icons, theme
@@ -10,14 +10,14 @@ from .api import card_image, card_subtitle, card_title
 from .images import ImageLoader
 from .workers import run_async
 
-SHAPES = {  # card width, image height
-    "poster": (152, 228),
-    "wide": (284, 160),
-    "square": (164, 164),
+SHAPES = {  # card width, image height (logical px)
+    "poster": (156, 234),
+    "wide": (288, 162),
+    "square": (168, 168),
 }
-TEXT_HEIGHT = 46
-GAP = 18
-RADIUS = 5
+TEXT_HEIGHT = 50
+GAP = 20
+RADIUS = 6
 ITEM = Qt.ItemDataRole.UserRole + 1
 
 
@@ -30,6 +30,39 @@ def shape_for(items, hint=None):
     if kinds and kinds <= {"artist", "album", "track", "photo", "playlist"}:
         return "square"
     return "poster"
+
+
+class SmoothScroll(QObject):
+    """Animated mouse-wheel scrolling for a scroll area (touchpads keep native scrolling)."""
+
+    def __init__(self, area, horizontal=False, step=150):
+        super().__init__(area)
+        self.bar = area.horizontalScrollBar() if horizontal else area.verticalScrollBar()
+        self.horizontal, self.step = horizontal, step
+        self.anim = QPropertyAnimation(self.bar, b"value", self)
+        self.anim.setDuration(280)
+        self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.target = None
+        area.viewport().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if event.type() != QEvent.Type.Wheel or not event.pixelDelta().isNull():
+            return False
+        delta = event.angleDelta()
+        d = delta.x() if self.horizontal else delta.y()
+        if d == 0 or (not self.horizontal and abs(delta.x()) > abs(delta.y())):
+            return False
+        self.scroll_by(-d / 120 * self.step)
+        return True
+
+    def scroll_by(self, amount):
+        running = self.anim.state() == QPropertyAnimation.State.Running
+        start = self.target if running and self.target is not None else self.bar.value()
+        self.target = int(max(self.bar.minimum(), min(self.bar.maximum(), start + amount)))
+        self.anim.stop()
+        self.anim.setStartValue(self.bar.value())
+        self.anim.setEndValue(self.target)
+        self.anim.start()
 
 
 class MediaModel(QAbstractListModel):
@@ -100,8 +133,8 @@ class CardDelegate(QStyledItemDelegate):
     def __init__(self, view, shape="poster", context="hub"):
         super().__init__(view)
         self.view, self.shape, self.context = view, shape, context
-        self.title_font = theme.font(13, QFont.Weight.DemiBold)
-        self.sub_font = theme.font(12)
+        self.title_font = theme.font(14, QFont.Weight.DemiBold)
+        self.sub_font = theme.font(13, QFont.Weight.Medium)
 
     def sizeHint(self, option, index):
         w, h = SHAPES[self.shape]
@@ -119,55 +152,47 @@ class CardDelegate(QStyledItemDelegate):
         clip = QPainterPath()
         clip.addRoundedRect(img, RADIUS, RADIUS)
 
-        # artwork (or a placeholder while it loads)
-        painter.fillPath(clip, theme.color("card"))
         pm = self._pixmap(m, w, h)
         if pm is not None and not pm.isNull():
             painter.setClipPath(clip)
-            scaled = pm.scaled(int(w * pm.devicePixelRatio()), int(h * pm.devicePixelRatio()),
-                               Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                               Qt.TransformationMode.SmoothTransformation)
-            sx = (scaled.width() - w * pm.devicePixelRatio()) / 2
-            sy = (scaled.height() - h * pm.devicePixelRatio()) / 2
-            painter.drawPixmap(img, scaled, QRectF(sx, sy, w * pm.devicePixelRatio(), h * pm.devicePixelRatio()))
+            painter.drawPixmap(img, pm, QRectF(pm.rect()))
             painter.setClipping(False)
         else:
+            painter.fillPath(clip, theme.color("card"))
             glyph = icons.pixmap(icons.section_icon({"episode": "show", "season": "show",
                                                      "track": "artist", "album": "artist"}
                                                     .get(m.get("type"), m.get("type"))),
-                                 "#4a4e54", 40)
+                                 "#3d4147", 40)
             painter.drawPixmap(int(img.center().x() - 20), int(img.center().y() - 20), glyph)
 
         self._badges(painter, m, img)
 
         if hovered:
-            painter.fillPath(clip, QColor(0, 0, 0, 90))
+            painter.fillPath(clip, QColor(0, 0, 0, 70))
             painter.setPen(QPen(theme.color("accent"), 3))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRoundedRect(img.adjusted(1.5, 1.5, -1.5, -1.5), RADIUS, RADIUS)
             if m.get("type") in ("movie", "episode", "track", "clip") and not m.get("_download_state"):
                 c = img.center()
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(theme.color("accent"))
-                painter.drawEllipse(c, 26, 26)
-                painter.drawPixmap(int(c.x() - 14), int(c.y() - 14), icons.pixmap("play", "#000000", 28))
+                painter.drawEllipse(c, 27, 27)
+                painter.drawPixmap(int(c.x() - 13), int(c.y() - 14), icons.pixmap("play", "#111111", 28))
 
-        # title + subtitle
         painter.setPen(QColor(theme.TEXT))
         painter.setFont(self.title_font)
         fm = painter.fontMetrics()
-        text_rect = QRect(int(x), int(y + h + 7), w, 18)
-        painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft,
+        painter.drawText(QRect(int(x), int(y + h + 9), w, 20), Qt.AlignmentFlag.AlignLeft,
                          fm.elidedText(card_title(m, self.context), Qt.TextElideMode.ElideRight, w))
-        painter.setPen(QColor(255, 255, 255, 140))
+        painter.setPen(QColor(255, 255, 255, 150))
         painter.setFont(self.sub_font)
         fm = painter.fontMetrics()
-        painter.drawText(QRect(int(x), int(y + h + 25), w, 18), Qt.AlignmentFlag.AlignLeft,
+        painter.drawText(QRect(int(x), int(y + h + 29), w, 18), Qt.AlignmentFlag.AlignLeft,
                          fm.elidedText(card_subtitle(m, self.context), Qt.TextElideMode.ElideRight, w))
         painter.restore()
 
     def _badges(self, painter, m, img):
         accent = theme.color("accent")
-        # progress
         progress = None
         if m.get("_download_state") in ("queued", "downloading"):
             total = m.get("_download_total") or 0
@@ -183,16 +208,16 @@ class CardDelegate(QStyledItemDelegate):
             label = {"queued": "Queued", "downloading": f"{int((progress or 0) * 100)}%",
                      "failed": "Failed", "done": ""}.get(m["_download_state"], "")
             if label:
-                self._pill(painter, img, label, QColor(0, 0, 0, 200), QColor(theme.TEXT))
+                self._pill(painter, img, label, QColor(0, 0, 0, 210), QColor(theme.TEXT))
             return
 
         unwatched = None
         if m.get("type") in ("show", "season") and "leafCount" in m:
             unwatched = int(m.get("leafCount", 0)) - int(m.get("viewedLeafCount", 0))
         if unwatched:
-            self._pill(painter, img, str(unwatched), accent, QColor("#000000"))
+            self._pill(painter, img, str(unwatched), accent, QColor("#111111"))
         elif m.get("type") in ("movie", "episode") and not m.get("viewCount") and not m.get("viewOffset"):
-            tri = QPainterPath()  # small unwatched corner marker
+            tri = QPainterPath()  # unwatched corner marker
             tri.moveTo(img.right() - 22, img.top())
             tri.lineTo(img.right() - RADIUS, img.top())
             tri.quadTo(img.right(), img.top(), img.right(), img.top() + RADIUS)
@@ -201,13 +226,13 @@ class CardDelegate(QStyledItemDelegate):
             painter.fillPath(tri, accent)
 
     def _pill(self, painter, img, text, bg, fg):
-        painter.setFont(theme.font(11, QFont.Weight.Bold))
+        painter.setFont(theme.font(12, QFont.Weight.Bold))
         fm = painter.fontMetrics()
-        pw = max(22, fm.horizontalAdvance(text) + 12)
-        r = QRectF(img.right() - pw - 6, img.top() + 6, pw, 20)
+        pw = max(24, fm.horizontalAdvance(text) + 14)
+        r = QRectF(img.right() - pw - 7, img.top() + 7, pw, 22)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(bg)
-        painter.drawRoundedRect(r, 10, 10)
+        painter.drawRoundedRect(r, 11, 11)
         painter.setPen(fg)
         painter.drawText(r, Qt.AlignmentFlag.AlignCenter, text)
 
@@ -226,7 +251,6 @@ class CardDelegate(QStyledItemDelegate):
 
 
 class CardView(QListView):
-    """Base for grids and hub rows: emits the clicked item's metadata."""
     opened = Signal(dict)
     context_requested = Signal(dict, QPoint)
 
@@ -242,6 +266,7 @@ class CardView(QListView):
         self.setVerticalScrollMode(QListView.ScrollMode.ScrollPerPixel)
         self.setHorizontalScrollMode(QListView.ScrollMode.ScrollPerPixel)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFrameShape(QListView.Shape.NoFrame)
         self.clicked.connect(lambda idx: self.opened.emit(idx.data(ITEM)))
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._context)
@@ -262,20 +287,21 @@ class GridView(CardView):
         self.setMovement(QListView.Movement.Static)
         self.setSpacing(0)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.verticalScrollBar().setSingleStep(40)
+        SmoothScroll(self)
 
 
 class HubView(CardView):
     def wheelEvent(self, event):
         # Horizontal swipes scroll the row; plain wheel turns go to the page.
-        if abs(event.angleDelta().x()) > abs(event.angleDelta().y()):
+        if abs(event.angleDelta().x()) > abs(event.angleDelta().y()) or not event.pixelDelta().isNull() \
+                and abs(event.pixelDelta().x()) > abs(event.pixelDelta().y()):
             super().wheelEvent(event)
         else:
             event.ignore()
 
 
 class HubRow(QWidget):
-    """Titled horizontal strip of cards with page arrows, like a home-screen hub."""
+    """Titled horizontal strip of cards with animated page arrows."""
     opened = Signal(dict)
     title_clicked = Signal()
 
@@ -290,16 +316,15 @@ class HubRow(QWidget):
         self.view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.view.setFixedHeight(SHAPES[shape][1] + TEXT_HEIGHT + 4)
         self.view.opened.connect(self.opened)
-        self.view.horizontalScrollBar().rangeChanged.connect(lambda *_: self._update_arrows())
-        self.view.horizontalScrollBar().valueChanged.connect(lambda *_: self._update_arrows())
+        self.scroller = SmoothScroll(self.view, horizontal=True)
+        self.scroller.anim.setDuration(420)
+        bar = self.view.horizontalScrollBar()
+        bar.rangeChanged.connect(lambda *_: self._update_arrows())
+        bar.valueChanged.connect(lambda *_: self._update_arrows())
 
         header = QHBoxLayout()
         header.setContentsMargins(GAP // 2, 0, 0, 0)
-        self.title = QPushButton(title)
-        self.title.setObjectName("Link")
-        self.title.setStyleSheet("font-size: 19px; font-weight: 600; color: white;")
-        self.title.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.title.clicked.connect(self.title_clicked)
+        self.title = QLabel(title, objectName="HubTitle")
         header.addWidget(self.title)
         header.addStretch()
         self.prev = self._arrow("chevron_left", -1)
@@ -309,22 +334,17 @@ class HubRow(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
         layout.addLayout(header)
         layout.addWidget(self.view)
 
     def _arrow(self, name, direction):
-        b = QPushButton()
-        b.setObjectName("IconButton")
+        b = QPushButton(objectName="IconButton")
         b.setIcon(icons.icon(name, "#bbbbbb", active_color="#ffffff"))
         b.setIconSize(QSize(22, 22))
         b.setCursor(Qt.CursorShape.PointingHandCursor)
-        b.clicked.connect(lambda: self._page(direction))
+        b.clicked.connect(lambda: self.scroller.scroll_by(direction * int(self.view.viewport().width() * 0.85)))
         return b
-
-    def _page(self, direction):
-        bar = self.view.horizontalScrollBar()
-        bar.setValue(bar.value() + direction * int(self.view.viewport().width() * 0.85))
 
     def _update_arrows(self):
         bar = self.view.horizontalScrollBar()
@@ -332,6 +352,32 @@ class HubRow(QWidget):
         self.next.setEnabled(bar.value() < bar.maximum())
         self.prev.setVisible(bar.maximum() > 0)
         self.next.setVisible(bar.maximum() > 0)
+
+
+class SkeletonRow(QWidget):
+    """Grey placeholder of a hub row, shown while a page loads."""
+
+    def __init__(self, shape="poster", count=8, parent=None):
+        super().__init__(parent)
+        self.shape, self.count = shape, count
+        self.setFixedHeight(SHAPES[shape][1] + TEXT_HEIGHT + 40)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(255, 255, 255, 14))
+        p.drawRoundedRect(QRectF(GAP // 2, 4, 200, 20), 4, 4)
+        w, h = SHAPES[self.shape]
+        for i in range(self.count):
+            x = GAP // 2 + i * (w + GAP)
+            if x > self.width():
+                break
+            p.setBrush(QColor(255, 255, 255, 12))
+            p.drawRoundedRect(QRectF(x, 40, w, h), RADIUS, RADIUS)
+            p.setBrush(QColor(255, 255, 255, 10))
+            p.drawRoundedRect(QRectF(x, 40 + h + 12, w * 0.7, 12), 3, 3)
 
 
 def label(text, name=None, wrap=False):

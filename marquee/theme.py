@@ -1,149 +1,166 @@
-"""Colors, fonts and the application stylesheet (dark media-center look)."""
+"""Colors, fonts and the application stylesheet."""
+import glob
 import os
 
 from PySide6.QtGui import QColor, QFont, QFontDatabase
 
 ACCENT = "#e5a00d"
 ACCENT_HOVER = "#f3b125"
-BG = "#1f2326"
-BG_DEEP = "#16181a"
-SIDEBAR = "#121314"
-CARD = "#282a2d"
-CONTROL = "#3f4245"
-GREY = "#868c96"
+BG = "#17191c"
+BG_TOP = "#1d2024"
+SURFACE = "#22252a"
+SIDEBAR = "#0f1012"
+CARD = "#26292e"
+CONTROL = "#34383e"
 TEXT = "#ffffff"
-TEXT_MUTED = "rgba(255,255,255,0.6)"
-TEXT_FAINT = "rgba(255,255,255,0.35)"
+TEXT_MUTED = "rgba(255,255,255,0.62)"
+TEXT_FAINT = "rgba(255,255,255,0.38)"
 
-FONT_FAMILIES = ["Open Sans", "Segoe UI", "Helvetica Neue", "Arial"]
+FONT = "Figtree"
+FONT_FAMILIES = [FONT, "Segoe UI", "Helvetica Neue", "Arial"]
 
 
 def color(name):
     return QColor({"accent": ACCENT, "bg": BG, "card": CARD, "control": CONTROL,
-                   "grey": GREY, "text": TEXT, "sidebar": SIDEBAR}[name])
+                   "text": TEXT, "sidebar": SIDEBAR, "surface": SURFACE}[name])
 
 
 def load_fonts():
-    here = os.path.join(os.path.dirname(__file__), "fonts")
-    for name in ("OpenSans-400.woff", "OpenSans-600.woff", "OpenSans-700.woff"):
-        QFontDatabase.addApplicationFont(os.path.join(here, name))
+    for path in glob.glob(os.path.join(os.path.dirname(__file__), "fonts", "*.ttf")):
+        QFontDatabase.addApplicationFont(path)
 
 
-def font(size=13, weight=QFont.Weight.Normal):
+def font(size=14, weight=QFont.Weight.Normal):
     f = QFont()
     f.setFamilies(FONT_FAMILIES)
     f.setPixelSize(size)
     f.setWeight(weight)
     f.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+    f.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     return f
 
 
 STYLESHEET = f"""
-* {{ font-family: "Open Sans", "Segoe UI", sans-serif; color: {TEXT}; }}
+* {{ font-family: "{FONT}", "Segoe UI", sans-serif; color: {TEXT}; }}
 QMainWindow, #Root {{ background: {BG}; }}
-QToolTip {{ background: {CARD}; color: {TEXT}; border: 1px solid {CONTROL}; padding: 4px 8px; }}
+QToolTip {{ background: {SURFACE}; color: {TEXT}; border: 1px solid {CONTROL}; padding: 5px 9px;
+            border-radius: 4px; font-size: 13px; }}
 
 #Sidebar {{ background: {SIDEBAR}; }}
 #Sidebar QPushButton {{
-    text-align: left; padding: 9px 18px; border: none; border-radius: 0;
-    font-size: 14px; color: {TEXT_MUTED}; background: transparent;
+    text-align: left; padding: 10px 20px; border: none; border-radius: 0;
+    font-size: 15px; font-weight: 500; color: {TEXT_MUTED}; background: transparent;
 }}
-#Sidebar QPushButton:hover {{ color: {TEXT}; background: rgba(255,255,255,0.05); }}
+#Sidebar QPushButton:hover {{ color: {TEXT}; background: rgba(255,255,255,0.04); }}
 #Sidebar QPushButton:checked {{
-    color: {TEXT}; background: rgba(255,255,255,0.08); border-left: 3px solid {ACCENT}; padding-left: 15px;
+    color: {TEXT}; font-weight: 600; background: rgba(255,255,255,0.07);
+    border-left: 3px solid {ACCENT}; padding-left: 17px;
 }}
-#SidebarHeading {{ color: {TEXT_FAINT}; font-size: 11px; font-weight: 700; letter-spacing: 1px;
-                   padding: 18px 18px 6px 18px; }}
-#Brand {{ font-size: 21px; font-weight: 700; color: {ACCENT}; padding: 18px 18px 14px 18px; }}
+#SidebarHeading {{ color: {TEXT_FAINT}; font-size: 11px; font-weight: 700; letter-spacing: 1.4px;
+                   padding: 22px 20px 8px 20px; }}
+#Brand {{ font-size: 23px; font-weight: 800; color: {ACCENT}; padding: 20px 20px 16px 20px;
+          letter-spacing: -0.3px; }}
 
-#TopBar {{ background: {BG_DEEP}; border-bottom: 1px solid rgba(255,255,255,0.06); }}
+#TopBar {{ background: {BG}; }}
 #Search {{
-    background: rgba(255,255,255,0.1); border: 1px solid transparent; border-radius: 17px;
-    padding: 0 14px 0 4px; font-size: 14px; min-height: 34px; selection-background-color: {ACCENT};
+    background: rgba(255,255,255,0.08); border: 1px solid transparent; border-radius: 18px;
+    padding: 0 14px 0 4px; font-size: 14px; font-weight: 500; min-height: 36px;
+    selection-background-color: {ACCENT};
 }}
-#Search:focus {{ background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.25); }}
-#OfflineBadge {{ color: {ACCENT}; font-size: 12px; font-weight: 600; }}
+#Search:focus {{ background: rgba(255,255,255,0.13); border: 1px solid rgba(255,255,255,0.22); }}
+#OfflineBadge {{ color: {ACCENT}; font-size: 12px; font-weight: 700; letter-spacing: 0.6px; }}
 
 QScrollArea, QScrollArea > QWidget > QWidget, #Page {{ background: transparent; border: none; }}
-QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
-QScrollBar::handle:vertical {{ background: rgba(255,255,255,0.18); border-radius: 5px; min-height: 40px; }}
-QScrollBar::handle:vertical:hover {{ background: rgba(255,255,255,0.3); }}
+QScrollBar:vertical {{ background: transparent; width: 9px; margin: 2px; }}
+QScrollBar::handle:vertical {{ background: rgba(255,255,255,0.14); border-radius: 4px; min-height: 48px; }}
+QScrollBar::handle:vertical:hover {{ background: rgba(255,255,255,0.28); }}
 QScrollBar:horizontal {{ height: 0; }}
 QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {{
     background: none; border: none; height: 0; width: 0; }}
-
 QListView {{ background: transparent; border: none; outline: none; }}
 
-#HubTitle {{ font-size: 19px; font-weight: 600; }}
-#PageTitle {{ font-size: 26px; font-weight: 700; }}
-#Muted {{ color: {TEXT_MUTED}; font-size: 13px; }}
-#Faint {{ color: {TEXT_FAINT}; font-size: 13px; }}
-#DetailTitle {{ font-size: 34px; font-weight: 700; }}
-#DetailParent {{ font-size: 18px; font-weight: 600; color: {TEXT_MUTED}; }}
-#DetailMeta {{ font-size: 15px; color: {TEXT_MUTED}; }}
-#Tagline {{ font-size: 15px; font-style: italic; color: {TEXT_MUTED}; }}
-#Summary {{ font-size: 15px; line-height: 150%; }}
-#FactLabel {{ color: {TEXT_FAINT}; font-size: 13px; font-weight: 600; }}
-#FactValue {{ font-size: 13px; color: {TEXT_MUTED}; }}
-#Badge {{ border: 1px solid rgba(255,255,255,0.45); border-radius: 3px; padding: 0 5px;
-          font-size: 11px; font-weight: 700; color: {TEXT_MUTED}; }}
+#HubTitle {{ font-size: 20px; font-weight: 700; letter-spacing: -0.2px; }}
+#PageTitle {{ font-size: 30px; font-weight: 800; letter-spacing: -0.5px; }}
+#Muted {{ color: {TEXT_MUTED}; font-size: 14px; font-weight: 500; }}
+#Faint {{ color: {TEXT_FAINT}; font-size: 13px; font-weight: 500; }}
+#DetailTitle {{ font-size: 42px; font-weight: 800; letter-spacing: -0.8px; }}
+#DetailParent {{ font-size: 18px; font-weight: 700; color: {TEXT_MUTED}; }}
+#DetailMeta {{ font-size: 16px; font-weight: 500; color: {TEXT_MUTED}; }}
+#Tagline {{ font-size: 16px; font-style: italic; color: {TEXT_MUTED}; }}
+#Summary {{ font-size: 16px; line-height: 150%; color: rgba(255,255,255,0.88); }}
+#FactLabel {{ color: {TEXT_FAINT}; font-size: 12px; font-weight: 700; letter-spacing: 0.8px; }}
+#FactValue {{ font-size: 14px; font-weight: 500; color: {TEXT_MUTED}; }}
+#Badge {{ border: 1px solid rgba(255,255,255,0.4); border-radius: 3px; padding: 1px 6px;
+          font-size: 11px; font-weight: 800; color: rgba(255,255,255,0.75); letter-spacing: 0.4px; }}
 
 QPushButton {{ border: none; background: transparent; }}
 #Primary {{
-    background: {ACCENT}; color: #000; font-weight: 700; font-size: 15px;
-    border-radius: 4px; padding: 9px 22px 9px 16px;
+    background: {ACCENT}; color: #111; font-weight: 700; font-size: 15px;
+    border-radius: 5px; padding: 10px 24px 10px 16px;
 }}
 #Primary:hover {{ background: {ACCENT_HOVER}; }}
 #Primary:disabled {{ background: {CONTROL}; color: {TEXT_FAINT}; }}
 #Secondary {{
-    background: rgba(255,255,255,0.1); font-weight: 600; font-size: 14px;
-    border-radius: 4px; padding: 9px 16px;
+    background: rgba(255,255,255,0.1); font-weight: 600; font-size: 15px;
+    border-radius: 5px; padding: 10px 18px;
 }}
-#Secondary:hover {{ background: rgba(255,255,255,0.18); }}
-#Round {{ background: rgba(255,255,255,0.1); border-radius: 20px; min-width: 40px; min-height: 40px; }}
-#Round:hover {{ background: rgba(255,255,255,0.2); }}
-#Round:checked {{ background: rgba(229,160,13,0.25); }}
+#Secondary:hover {{ background: rgba(255,255,255,0.17); }}
+#Round {{ background: rgba(255,255,255,0.1); border-radius: 21px; min-width: 42px; min-height: 42px; }}
+#Round:hover {{ background: rgba(255,255,255,0.18); }}
+#Round:checked {{ background: rgba(229,160,13,0.22); }}
 #IconButton {{ border-radius: 18px; padding: 6px; }}
-#IconButton:hover {{ background: rgba(255,255,255,0.12); }}
-#Link {{ color: {TEXT_MUTED}; font-size: 14px; text-align: left; padding: 0; }}
+#IconButton:hover {{ background: rgba(255,255,255,0.1); }}
+#Link {{ color: {TEXT_MUTED}; font-size: 15px; font-weight: 600; text-align: left; padding: 0; }}
 #Link:hover {{ color: {ACCENT}; }}
-#Tab {{ font-size: 14px; font-weight: 600; color: {TEXT_MUTED}; padding: 6px 2px; margin-right: 22px;
+#Tab {{ font-size: 15px; font-weight: 600; color: {TEXT_MUTED}; padding: 7px 2px; margin-right: 24px;
         border-bottom: 3px solid transparent; border-radius: 0; }}
 #Tab:hover {{ color: {TEXT}; }}
 #Tab:checked {{ color: {TEXT}; border-bottom: 3px solid {ACCENT}; }}
 
 QComboBox {{
-    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;
-    padding: 6px 30px 6px 10px; font-size: 13px; min-height: 20px;
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.09); border-radius: 5px;
+    padding: 7px 30px 7px 12px; font-size: 14px; font-weight: 500; min-height: 20px;
 }}
-QComboBox:hover {{ background: rgba(255,255,255,0.14); }}
+QComboBox:hover {{ background: rgba(255,255,255,0.12); }}
 QComboBox::drop-down {{ border: none; width: 26px; }}
 QComboBox QAbstractItemView {{
-    background: {CARD}; border: 1px solid {CONTROL}; selection-background-color: {CONTROL};
+    background: {SURFACE}; border: 1px solid {CONTROL}; selection-background-color: {CONTROL};
     outline: none; padding: 4px;
 }}
-QMenu {{ background: {CARD}; border: 1px solid {CONTROL}; padding: 6px 0; }}
-QMenu::item {{ padding: 7px 28px 7px 22px; font-size: 13px; }}
+QMenu {{ background: {SURFACE}; border: 1px solid {CONTROL}; border-radius: 6px; padding: 6px 0; }}
+QMenu::item {{ padding: 8px 30px 8px 22px; font-size: 14px; font-weight: 500; }}
 QMenu::item:selected {{ background: {CONTROL}; }}
 QMenu::item:checked {{ color: {ACCENT}; }}
 QMenu::indicator {{ width: 0; }}
 QMenu::separator {{ height: 1px; background: {CONTROL}; margin: 5px 0; }}
 QMenu::section {{ color: {TEXT_FAINT}; font-size: 11px; font-weight: 700; padding: 6px 22px; }}
 
-QLineEdit {{ background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
-             border-radius: 4px; padding: 7px 10px; font-size: 13px; }}
-QDialog {{ background: {CARD}; }}
+QLineEdit {{ background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);
+             border-radius: 5px; padding: 8px 10px; font-size: 14px; }}
+QDialog {{ background: {SURFACE}; }}
 QProgressBar {{ background: rgba(255,255,255,0.12); border: none; border-radius: 2px; max-height: 4px; }}
 QProgressBar::chunk {{ background: {ACCENT}; border-radius: 2px; }}
+#Toast {{ background: rgba(28,30,34,0.96); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+          padding: 11px 18px; font-size: 14px; font-weight: 500; }}
 
-#PlayerBar {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(0,0,0,0.0),
-                                          stop:0.35 rgba(0,0,0,0.75), stop:1 rgba(0,0,0,0.92)); }}
-#PlayerTitle {{ font-size: 15px; font-weight: 700; }}
-#PlayerSub {{ font-size: 13px; color: {TEXT_MUTED}; }}
-#Clock {{ font-size: 12px; color: {TEXT_MUTED}; }}
+/* player overlay */
+#OsdTitle {{ font-size: 18px; font-weight: 700; }}
+#OsdSub {{ font-size: 14px; font-weight: 500; color: {TEXT_MUTED}; }}
+#OsdClock {{ font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.8); }}
+#OsdStatus {{ font-size: 14px; font-weight: 600; color: {ACCENT}; }}
+#OsdButton {{ border-radius: 22px; padding: 8px; }}
+#OsdButton:hover {{ background: rgba(255,255,255,0.14); }}
+#OsdButton:checked {{ background: rgba(255,255,255,0.18); }}
+#Panel {{ background: rgba(18,19,22,0.97); border-radius: 10px; }}
+#PanelTitle {{ font-size: 13px; font-weight: 700; color: {TEXT_FAINT}; letter-spacing: 1px; }}
+#PanelItem {{ text-align: left; padding: 9px 14px; border-radius: 6px; font-size: 15px; font-weight: 500;
+              color: rgba(255,255,255,0.82); }}
+#PanelItem:hover {{ background: rgba(255,255,255,0.08); color: white; }}
+#PanelItem:checked {{ color: {ACCENT}; font-weight: 700; }}
+#PanelTab {{ font-size: 14px; font-weight: 700; color: {TEXT_MUTED}; padding: 8px 4px; margin-right: 18px;
+             border-bottom: 2px solid transparent; border-radius: 0; }}
+#PanelTab:checked {{ color: white; border-bottom: 2px solid {ACCENT}; }}
 QSlider::groove:horizontal {{ height: 4px; background: rgba(255,255,255,0.25); border-radius: 2px; }}
-QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
-QSlider::handle:horizontal {{ background: {TEXT}; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }}
-QSlider::handle:horizontal:hover {{ background: {ACCENT}; }}
-#Toast {{ background: rgba(20,20,20,0.92); border-radius: 6px; padding: 10px 16px; font-size: 13px; }}
+QSlider::sub-page:horizontal {{ background: white; border-radius: 2px; }}
+QSlider::handle:horizontal {{ background: white; width: 12px; height: 12px; margin: -4px 0; border-radius: 6px; }}
 """

@@ -12,7 +12,7 @@ from .config import APP_NAME
 from .details import DetailsPage
 from .login import LoginPage
 from .pages import DownloadsPage, HomePage, LibraryPage, MessagePage, SearchPage
-from .player import PlayerWindow
+from .player import PlayerView
 from .workers import run_async
 
 
@@ -108,7 +108,10 @@ class MainWindow(QMainWindow):
         layout.setSpacing(0)
         layout.addWidget(self.sidebar)
         layout.addLayout(content, 1)
-        self.setCentralWidget(root)
+        # The shell swaps between the library UI and the player, inside this same window.
+        self.shell = QStackedWidget()
+        self.shell.addWidget(root)
+        self.setCentralWidget(self.shell)
         QShortcut(QKeySequence("Ctrl+F"), self, lambda: self.search.setFocus())
         QShortcut(QKeySequence(Qt.Key.Key_Backspace), self, self._backspace)
         QShortcut(QKeySequence("Alt+Left"), self, self.back)
@@ -303,12 +306,14 @@ class MainWindow(QMainWindow):
 
         def launch(full):
             if self.player is not None:
-                self.player.close()
-            self.player = PlayerWindow(self.client, self.downloads, full, media_index, start, local)
+                self.player.stop()
+            self.was_maximized = self.isMaximized()
+            self.player = PlayerView(self, full, media_index, start, local)
             self.player.closed.connect(self._player_closed)
-            self.player.show()
-            self.player.raise_()
-            self.player.activateWindow()
+            self.shell.addWidget(self.player)
+            self.shell.setCurrentWidget(self.player)
+            self.player.setFocus()
+            QTimer.singleShot(0, self.player.start)
 
         has_parts = bool((meta.get("Media") or [{}])[0].get("Part", [{}])[0].get("Stream"))
         if local or has_parts or self.offline:
@@ -317,8 +322,19 @@ class MainWindow(QMainWindow):
             run_async(lambda: self.client.metadata(meta["ratingKey"]), launch,
                       lambda e: self.toast(f"Couldn't start playback: {e}"))
 
+    def set_fullscreen(self, on):
+        if on and not self.isFullScreen():
+            self.showFullScreen()
+        elif not on and self.isFullScreen():
+            self.showMaximized() if getattr(self, "was_maximized", False) else self.showNormal()
+
     def _player_closed(self, rating_key, position):
-        self.player = None
+        view, self.player = self.player, None
+        self.set_fullscreen(False)
+        self.shell.setCurrentIndex(0)
+        if view is not None:
+            self.shell.removeWidget(view)
+            view.deleteLater()
         current = self.history[-1] if self.history else None
         if current is not None and hasattr(current, "refresh"):
             QTimer.singleShot(600, lambda: self._safe_refresh(current))
@@ -342,7 +358,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self.player is not None:
-            self.player.close()
+            self.player.stop()
         self.downloads.shutdown()
         super().closeEvent(event)
 

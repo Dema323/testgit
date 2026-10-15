@@ -40,6 +40,9 @@ checks = {
     "transcode stream loaded": r.get("transcode_mode") == "transcode" and r.get("transcode_loaded") is True,
     "download finished": r.get("download_state") == "done",
     "offline playback": r.get("local_mode") == "local",
+    "show page lists seasons": r.get("show200_seasons_row") and r.get("show300_seasons_row"),
+    "episode 'Season 1' link opens the season": r.get("season_link_opened") == "210",
+    "player opens inside the main window": r.get("player_in_main_window") is True,
 }
 for name, ok in checks.items():
     print(("PASS  " if ok else "FAIL  ") + name)

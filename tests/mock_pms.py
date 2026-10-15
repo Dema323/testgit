@@ -116,8 +116,10 @@ def lite(m):  # list views omit Stream details, like the real server
 
 def full(m):
     out = dict(m)
-    if m["type"] == "show":
-        out["OnDeck"] = {"Metadata": [lite(items["214"])]}
+    if m["ratingKey"] == "200":
+        out["OnDeck"] = {"Metadata": [lite(items["214"])]}      # list form
+    elif m["ratingKey"] == "300":
+        out["OnDeck"] = {"Metadata": lite(items["311"])}        # single-object form
     return out
 
 
