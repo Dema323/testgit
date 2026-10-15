@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+build/
+dist/
+libmpv-2.dll
+mpv-dev.7z
+*.zip
