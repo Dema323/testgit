@@ -123,6 +123,9 @@ def playing():
     results["mpv_hwdec"] = p.player.hwdec_current
     results["mpv_vo_configured"] = p.player.vo_configured
     shot("8-player", p)
+    # Ask mpv for what it actually rendered (GPU readback), since screen capture of a
+    # Direct3D child window can come back black even when video is showing.
+    p.player.command("screenshot-to-file", os.path.join(OUT, "8-player-mpv-frame.png"), "window")
     p._choose_audio(next(s for s in p.part["Stream"] if s["id"] == 10003))  # Français
 
 
