@@ -105,5 +105,5 @@ top right).
 
 ## Fonts
 
-The bundled Open Sans is licensed under the SIL Open Font License (see `ember/fonts/OFL.txt`).
-If it can't be loaded, the interface falls back to Segoe UI.
+The bundled Figtree is licensed under the SIL Open Font License (see `ember/fonts/OFL.txt`).
+Any other font file on your computer can be used instead: *Settings → Interface font*.
