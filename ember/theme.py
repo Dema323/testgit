@@ -7,25 +7,26 @@ from PySide6.QtGui import QColor, QFont, QFontDatabase, QPainter, QPixmap, QRadi
 
 ACCENT = "#e5a00d"
 ACCENT_HOVER = "#f3b125"
-BG = "#141619"
+BG = "#161412"
 BG_TOP = "#1d2024"
-SURFACE = "#22252a"
-SIDEBAR = "rgba(0,0,0,0.32)"
-CARD = "#26292e"
-CONTROL = "#34383e"
+SURFACE = "#262320"
+SIDEBAR = "rgba(0,0,0,0.28)"
+CARD = "#2b2825"
+CONTROL = "#3b3733"
 TEXT = "#ffffff"
 TEXT_MUTED = "rgba(255,255,255,0.62)"
 TEXT_FAINT = "rgba(255,255,255,0.38)"
 
-FONT = "Figtree"
+FONT = "DM Sans"
 FONT_FAMILIES = [FONT, "Segoe UI", "Helvetica Neue", "Arial"]
 
-# Page background: black with four soft corner glows (slate, grey-teal, steel), like Plex's.
+# Page background: near-black with four soft corner glows in warm grey-browns (Plex's tone).
+BASE = QColor(14, 13, 12)
 GLOWS = [  # centre (x, y as fraction), radii (fraction of width, height), colour
-    ((0.0, 1.0), (0.8401, 1.4915), QColor(63, 76, 97, 153)),
-    ((0.9681, 1.0), (0.8006, 1.4328), QColor(91, 100, 106, 153)),
-    ((1.0, 0.0), (0.8241, 1.5106), QColor(58, 70, 87, 153)),
-    ((0.0, 0.0), (0.8606, 1.5874), QColor(84, 100, 115, 153)),
+    ((0.0, 1.0), (0.84, 1.49), QColor(66, 60, 53, 150)),
+    ((0.97, 1.0), (0.80, 1.43), QColor(78, 71, 63, 140)),
+    ((1.0, 0.0), (0.82, 1.51), QColor(58, 53, 48, 150)),
+    ((0.0, 0.0), (0.86, 1.59), QColor(74, 67, 60, 150)),
 ]
 
 
@@ -44,14 +45,14 @@ def load_fonts(custom_file=""):
         families = QFontDatabase.applicationFontFamilies(fid) if fid >= 0 else []
         if families:
             FONT = families[0]
-            FONT_FAMILIES = [FONT, "Figtree", "Segoe UI", "Arial"]
+            FONT_FAMILIES = [FONT, "DM Sans", "Segoe UI", "Arial"]
     return FONT
 
 
 def render_background(width, height, dim=0.0):
     """The page background as a pixmap (render once per size; it is costly to paint every frame)."""
     pm = QPixmap(max(1, width), max(1, height))
-    pm.fill(QColor(0, 0, 0))
+    pm.fill(BASE)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     w, h = pm.width(), pm.height()
@@ -85,7 +86,7 @@ def stylesheet():
 
 
 _STYLESHEET = f"""
-* {{ font-family: "__FONT__", "Figtree", "Segoe UI", sans-serif; color: {TEXT}; }}
+* {{ font-family: "__FONT__", "DM Sans", "Segoe UI", sans-serif; color: {TEXT}; }}
 QMainWindow {{ background: #000; }}
 QToolTip {{ background: {SURFACE}; color: {TEXT}; border: 1px solid {CONTROL}; padding: 5px 9px;
             border-radius: 4px; font-size: 13px; }}
@@ -103,7 +104,7 @@ QToolTip {{ background: {SURFACE}; color: {TEXT}; border: 1px solid {CONTROL}; p
 #Brand {{ font-size: 23px; font-weight: 800; color: {ACCENT}; padding: 20px 20px 16px 20px;
           letter-spacing: -0.3px; }}
 
-#TopBar {{ background: rgba(0,0,0,0.32); }}
+#TopBar {{ background: rgba(0,0,0,0.28); }}
 #Search {{
     background: rgba(255,255,255,0.1); border: 1px solid transparent; border-radius: 18px;
     padding: 0 14px 0 4px; font-size: 14px; font-weight: 500; min-height: 36px;
@@ -186,20 +187,20 @@ QProgressBar::chunk {{ background: {ACCENT}; border-radius: 2px; }}
           padding: 11px 18px; font-size: 14px; font-weight: 500; }}
 
 /* player overlay */
-#OsdTitle {{ font-size: 18px; font-weight: 700; }}
-#OsdSub {{ font-size: 14px; font-weight: 500; color: {TEXT_MUTED}; }}
-#OsdClock {{ font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.8); }}
+#OsdTitle {{ font-size: 15px; font-weight: 700; }}
+#OsdSub {{ font-size: 13px; font-weight: 500; color: {TEXT_MUTED}; }}
+#OsdClock {{ font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.8); }}
 #OsdStatus {{ font-size: 14px; font-weight: 600; color: {ACCENT}; }}
-#OsdButton {{ border-radius: 22px; padding: 8px; }}
+#OsdButton {{ border-radius: 18px; padding: 5px; }}
 #OsdButton:hover {{ background: rgba(255,255,255,0.14); }}
 #OsdButton:checked {{ background: rgba(255,255,255,0.18); }}
 #Panel {{ background: rgba(18,19,22,0.78); border-radius: 10px; }}
 #PanelTitle {{ font-size: 13px; font-weight: 700; color: {TEXT_FAINT}; letter-spacing: 1px; }}
-#PanelItem {{ text-align: left; padding: 9px 14px; border-radius: 6px; font-size: 15px; font-weight: 500;
+#PanelItem {{ text-align: left; padding: 7px 12px; border-radius: 6px; font-size: 14px; font-weight: 500;
               color: rgba(255,255,255,0.82); }}
 #PanelItem:hover {{ background: rgba(255,255,255,0.08); color: white; }}
 #PanelItem:checked {{ color: {ACCENT}; font-weight: 700; }}
-#PanelTab {{ font-size: 14px; font-weight: 700; color: {TEXT_MUTED}; padding: 8px 4px; margin-right: 18px;
+#PanelTab {{ font-size: 13px; font-weight: 700; color: {TEXT_MUTED}; padding: 6px 2px; margin-right: 16px;
              border-bottom: 2px solid transparent; border-radius: 0; }}
 #PanelTab:checked {{ color: white; border-bottom: 2px solid {ACCENT}; }}
 QSlider::groove:horizontal {{ height: 4px; background: rgba(255,255,255,0.25); border-radius: 2px; }}

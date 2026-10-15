@@ -48,6 +48,9 @@ checks = {
         and r.get("restored_player") is True,
     "sidebar folds and unfolds": r.get("sidebar_collapsed_width") == 72 and r.get("sidebar_expanded_width") == 248,
     "episode page shows cast": (r.get("episode_cast_cards") or 0) > 0,
+    "show artwork fills the window": r.get("show_art_fills_window") is True,
+    "player controls take < 15% of the height": 0 < (r.get("controls_height_fraction") or 1) < 0.15,
+    "own title bar on Windows": r.get("frameless") is True or sys.platform != "win32",
     "controls hidden while playing, shown when paused":
         r.get("controls_hidden_while_playing") is True and r.get("controls_shown_when_paused") is True,
 }

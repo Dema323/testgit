@@ -17,9 +17,10 @@ from PySide6.QtCore import (QEasingCurve, QEvent, QPoint, QPointF, QPropertyAnim
 from PySide6.QtGui import (QColor, QCursor, QFont, QIcon, QKeySequence, QLinearGradient, QPainter,
                            QPainterPath, QPen, QPixmap, QShortcut)
 from PySide6.QtWidgets import (QButtonGroup, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QPushButton,
-                               QScrollArea, QSlider, QVBoxLayout, QWidget)
+                               QScrollArea, QSizePolicy, QSlider, QVBoxLayout, QWidget)
 
 from . import icons, theme
+from .chrome import FRAMELESS, WindowButtons, start_move, toggle_maximized
 from .api import QUALITIES, fmt_clock, streams
 from .config import data_dir
 from .images import ImageLoader
@@ -86,7 +87,7 @@ class SeekBar(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setFixedHeight(44)
+        self.setFixedHeight(30)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.duration = 0.0
@@ -96,7 +97,7 @@ class SeekBar(QWidget):
         self.dragging = False
 
     def _track(self):
-        return QRectF(8, self.height() - 14, self.width() - 16, 6)
+        return QRectF(6, self.height() - 9, self.width() - 12, 5)
 
     def _ms_at(self, x):
         t = self._track()
@@ -134,7 +135,7 @@ class SeekBar(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         t = self._track()
         active = self.hover_x is not None or self.dragging
-        h = 6 if active else 4
+        h = 5 if active else 3
         track = QRectF(t.left(), t.center().y() - h / 2, t.width(), h)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(255, 255, 255, 60))
@@ -148,13 +149,13 @@ class SeekBar(QWidget):
             p.drawRoundedRect(QRectF(track.left(), track.top(), done, h), h / 2, h / 2)
             if active:
                 p.setBrush(QColor("white"))
-                p.drawEllipse(QPointF(track.left() + done, track.center().y()), 7, 7)
+                p.drawEllipse(QPointF(track.left() + done, track.center().y()), 6, 6)
             if self.hover_x is not None:
                 text = fmt_clock(self._ms_at(self.hover_x))
-                p.setFont(theme.font(13, QFont.Weight.Bold))
-                w = p.fontMetrics().horizontalAdvance(text) + 18
+                p.setFont(theme.font(12, QFont.Weight.Bold))
+                w = p.fontMetrics().horizontalAdvance(text) + 14
                 x = max(0, min(self.width() - w, self.hover_x - w / 2))
-                bubble = QRectF(x, 0, w, 24)
+                bubble = QRectF(x, 0, w, 18)
                 p.setBrush(QColor(0, 0, 0, 200))
                 p.drawRoundedRect(bubble, 5, 5)
                 p.setPen(QColor("white"))
@@ -180,15 +181,15 @@ class Controls(QWidget):
     def paintEvent(self, e):
         p = QPainter(self)
         h = self.height()
-        top = QLinearGradient(0, 0, 0, 140)
+        top = QLinearGradient(0, 0, 0, 90)
         top.setColorAt(0, QColor(0, 0, 0, 110))
         top.setColorAt(1, QColor(0, 0, 0, 0))
-        p.fillRect(0, 0, self.width(), 140, top)
-        bottom = QLinearGradient(0, h - 230, 0, h)
+        p.fillRect(0, 0, self.width(), 90, top)
+        bottom = QLinearGradient(0, h - 140, 0, h)
         bottom.setColorAt(0, QColor(0, 0, 0, 0))
-        bottom.setColorAt(0.55, QColor(0, 0, 0, 95))
+        bottom.setColorAt(0.5, QColor(0, 0, 0, 90))
         bottom.setColorAt(1, QColor(0, 0, 0, 150))
-        p.fillRect(0, h - 230, self.width(), 230, bottom)
+        p.fillRect(0, h - 140, self.width(), 140, bottom)
 
 
 class Overlay(QWidget):
@@ -212,14 +213,19 @@ class Overlay(QWidget):
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
-            if self.view.panel.isVisible():
+            if FRAMELESS and e.position().y() < 56 and not self.view.window().isFullScreen():
+                start_move(self.view.window())  # top strip moves the window, like a title bar
+            elif self.view.panel.isVisible():
                 self.view.panel.hide()
             else:
                 self.click_timer.start()
 
     def mouseDoubleClickEvent(self, e):
         self.click_timer.stop()
-        self.view.toggle_fullscreen()
+        if FRAMELESS and e.position().y() < 56 and not self.view.window().isFullScreen():
+            toggle_maximized(self.view.window())
+        else:
+            self.view.toggle_fullscreen()
 
     def wheelEvent(self, e):
         self.view.change_volume(5 if e.angleDelta().y() > 0 else -5)
@@ -277,16 +283,19 @@ class PlayerView(QWidget):
         self.fade_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.fade_anim.finished.connect(lambda: c.setVisible(self.fade.opacity() > 0.01))
 
-        back = osd_button("back", "Back to library — keeps playing (Esc)", 28, self.minimize_requested.emit)
+        back = osd_button("back", "Back to library — keeps playing (Esc)", 24, self.minimize_requested.emit)
         self.top_title = QLabel(objectName="OsdTitle")
-        self.fs_top = osd_button("fullscreen", "Fullscreen (F)", 26, self.toggle_fullscreen)
+        self.fs_top = osd_button("fullscreen", "Fullscreen (F)", 22, self.toggle_fullscreen)
         top = QHBoxLayout()
-        top.setContentsMargins(20, 16, 20, 0)
+        top.setContentsMargins(16, 10, 0 if FRAMELESS else 16, 0)
         top.addWidget(back)
         top.addSpacing(8)
         top.addWidget(self.top_title)
         top.addStretch()
         top.addWidget(self.fs_top)
+        if FRAMELESS:
+            top.addSpacing(6)
+            top.addWidget(WindowButtons(self.app), 0, Qt.AlignmentFlag.AlignTop)
 
         self.status = QLabel(objectName="OsdStatus")
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -302,38 +311,37 @@ class PlayerView(QWidget):
         seek_row.addWidget(self.remaining, 0, Qt.AlignmentFlag.AlignBottom)
 
         self.thumb = QLabel()
-        self.thumb.setFixedSize(52, 78)
+        self.thumb.setFixedSize(36, 54)
         self.title = QLabel(objectName="OsdTitle")
         self.subtitle = QLabel(objectName="OsdSub")
         info = QVBoxLayout()
-        info.setSpacing(2)
-        info.addStretch()
+        info.setSpacing(0)
+        info.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         info.addWidget(self.title)
         info.addWidget(self.subtitle)
-        info.addStretch()
         left = QHBoxLayout()
         left.setSpacing(14)
         left.addWidget(self.thumb)
         left.addLayout(info, 1)
 
-        self.play_btn = osd_button("pause", "Pause (Space)", 44, self.toggle_pause)
-        self.next_btn = osd_button("next", "Next episode", 28, self.play_next)
+        self.play_btn = osd_button("pause", "Pause (Space)", 34, self.toggle_pause)
+        self.next_btn = osd_button("next", "Next episode", 22, self.play_next)
         center = QHBoxLayout()
-        center.setSpacing(22)
-        center.addWidget(osd_button(skip_icon(10, False), "Back 10 seconds (←)", 38, lambda: self.seek_by(-10000)))
+        center.setSpacing(14)
+        center.addWidget(osd_button(skip_icon(10, False), "Back 10 seconds (←)", 30, lambda: self.seek_by(-10000)))
         center.addWidget(self.play_btn)
-        center.addWidget(osd_button(skip_icon(30, True), "Forward 30 seconds (→)", 38, lambda: self.seek_by(30000)))
+        center.addWidget(osd_button(skip_icon(30, True), "Forward 30 seconds (→)", 30, lambda: self.seek_by(30000)))
         center.addWidget(self.next_btn)
 
-        self.mute_btn = osd_button("volume", "Mute (M)", 24, self.toggle_mute)
+        self.mute_btn = osd_button("volume", "Mute (M)", 21, self.toggle_mute)
         self.volume = QSlider(Qt.Orientation.Horizontal)
         self.volume.setRange(0, 130)
         self.volume.setValue(100)
-        self.volume.setFixedWidth(96)
+        self.volume.setFixedWidth(84)
         self.volume.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.volume.valueChanged.connect(self._set_volume)
-        self.settings_btn = osd_button("settings", "Audio, subtitles & quality", 26, self.toggle_panel, True)
-        self.fs_btn = osd_button("fullscreen", "Fullscreen (F)", 26, self.toggle_fullscreen)
+        self.settings_btn = osd_button("settings", "Audio, subtitles & quality", 22, self.toggle_panel, True)
+        self.fs_btn = osd_button("fullscreen", "Fullscreen (F)", 22, self.toggle_fullscreen)
         right = QHBoxLayout()
         right.setSpacing(6)
         right.addStretch()
@@ -354,12 +362,15 @@ class PlayerView(QWidget):
         layout.addStretch()
         layout.addWidget(self.status)
         layout.addStretch()
-        bottom = QVBoxLayout()
-        bottom.setContentsMargins(30, 0, 30, 24)
-        bottom.setSpacing(8)
+        # Bottom block keeps its natural height; all spare room goes to the video area above it.
+        bottom_w = QWidget()
+        bottom_w.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        bottom = QVBoxLayout(bottom_w)
+        bottom.setContentsMargins(22, 0, 22, 10)
+        bottom.setSpacing(0)
         bottom.addLayout(seek_row)
         bottom.addLayout(row)
-        layout.addLayout(bottom)
+        layout.addWidget(bottom_w)
 
         self.panel = SettingsPanel(self, self.overlay)
         self.panel.hide()
@@ -472,7 +483,7 @@ class PlayerView(QWidget):
         self.thumb.clear()
         thumb = meta.get("_poster") or (meta.get("grandparentThumb") if kind == "episode" else meta.get("thumb"))
         if ImageLoader.instance() and thumb:
-            ImageLoader.instance().load(thumb, 104, 156, lambda pm: self.thumb.setPixmap(_rounded_thumb(pm)))
+            ImageLoader.instance().load(thumb, 72, 108, lambda pm: self.thumb.setPixmap(_rounded_thumb(pm)))
         self._start_stream(start_ms)
 
     def _start_stream(self, pos_ms):
@@ -802,12 +813,12 @@ def QRectFromWidget(widget):  # noqa: N802 - small helper mirroring Qt naming
 def _rounded_thumb(pm):
     if pm.isNull():
         return pm
-    out = QPixmap(104, 156)
+    out = QPixmap(72, 108)
     out.fill(Qt.GlobalColor.transparent)
     p = QPainter(out)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     path = QPainterPath()
-    path.addRoundedRect(QRectF(0, 0, 104, 156), 8, 8)
+    path.addRoundedRect(QRectF(0, 0, 72, 108), 6, 6)
     p.setClipPath(path)
     p.drawPixmap(0, 0, pm)
     p.end()
@@ -823,11 +834,11 @@ class SettingsPanel(QWidget):
         self.view = view
         self.setObjectName("Panel")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
-        self.setFixedWidth(380)
+        self.setFixedWidth(320)
         self.desired_height = 220
         self.tabs = QButtonGroup(self)
         tab_row = QHBoxLayout()
-        tab_row.setContentsMargins(18, 10, 18, 0)
+        tab_row.setContentsMargins(14, 6, 14, 0)
         for i, name in enumerate(("Audio", "Subtitles", "Quality")):
             b = QPushButton(name, objectName="PanelTab", checkable=True)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -838,7 +849,7 @@ class SettingsPanel(QWidget):
         self.tabs.idClicked.connect(self._fill)
         self.list_holder = QWidget(objectName="Page")
         self.list_box = QVBoxLayout(self.list_holder)
-        self.list_box.setContentsMargins(10, 8, 10, 12)
+        self.list_box.setContentsMargins(8, 4, 8, 8)
         self.list_box.setSpacing(2)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -854,7 +865,7 @@ class SettingsPanel(QWidget):
         seek_top = self.view.seek.mapTo(parent, QPoint(0, 0)).y() if self.view.seek.isVisible() \
             else parent.height() - 140
         bottom = seek_top + 10
-        h = max(150, min(self.desired_height, bottom - 90))
+        h = max(120, min(self.desired_height, bottom - 70))
         self.setGeometry(parent.width() - self.width() - 30, bottom - h, self.width(), h)
 
     def open(self):
@@ -898,7 +909,7 @@ class SettingsPanel(QWidget):
         if not options and tab != 2:
             self.list_box.addWidget(label_widget("Nothing to choose here."))
         self.list_box.addStretch()
-        self.desired_height = 76 + 44 * max(1, len(options))
+        self.desired_height = min(300, 70 + 40 * max(1, len(options)))
         self.place()
 
 

@@ -2,12 +2,13 @@
 the in-window player and the mini player that keeps playing while you browse."""
 from PySide6.QtCore import (QEasingCurve, QParallelAnimationGroup, QPoint, QPropertyAnimation, QRectF,
                             QSize, Qt, QTimer)
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QShortcut
+from PySide6.QtGui import QColor, QKeySequence, QLinearGradient, QPainter, QShortcut
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
                                QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu,
                                QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget)
 
 from . import branding, icons, theme
+from .chrome import DragBar, WindowButtons, make_frameless
 from .api import QUALITIES
 from .cards import label
 from .config import APP_NAME
@@ -43,7 +44,7 @@ class SettingsDialog(QDialog):
         form.addRow("Download folder", row)
 
         self.font_file = QLineEdit(cfg.get("font_file", ""))
-        self.font_file.setPlaceholderText("Default (Figtree)")
+        self.font_file.setPlaceholderText("Default (DM Sans)")
         pick = QPushButton("Choose…", objectName="Secondary")
         pick.clicked.connect(self._pick_font)
         reset = QPushButton("Default", objectName="Secondary")
@@ -88,19 +89,52 @@ class SettingsDialog(QDialog):
 
 
 class Background(QWidget):
-    """Black with soft corner glows; rendered once per size."""
+    """Window background: warm dark glows, or an item's artwork across the whole window.
+    Rendered once per size/artwork, so scrolling never repaints gradients."""
 
     def __init__(self):
         super().__init__(objectName="Root")
         self.cache = None
+        self.art = None
+
+    def set_art(self, pixmap):
+        if pixmap is not self.art:
+            self.art = pixmap
+            self.cache = None
+            self.update()
 
     def resizeEvent(self, event):
         self.cache = None
 
     def paintEvent(self, event):
         if self.cache is None or self.cache.size() != self.size():
-            self.cache = theme.render_background(self.width(), self.height())
+            self.cache = self._render()
         QPainter(self).drawPixmap(0, 0, self.cache)
+
+    def _render(self):
+        w, h = self.width(), self.height()
+        pm = theme.render_background(w, h)
+        if self.art is None:
+            return pm
+        p = QPainter(pm)
+        scaled = self.art.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                 Qt.TransformationMode.SmoothTransformation)
+        p.setOpacity(0.62)
+        p.drawPixmap((w - scaled.width()) // 2, 0, scaled)
+        p.setOpacity(1)
+        # Darken towards the left (text side) and the bottom so everything stays readable.
+        left = QLinearGradient(0, 0, w, 0)
+        left.setColorAt(0.0, QColor(10, 9, 8, 235))
+        left.setColorAt(0.45, QColor(10, 9, 8, 150))
+        left.setColorAt(1.0, QColor(10, 9, 8, 40))
+        p.fillRect(0, 0, w, h, left)
+        down = QLinearGradient(0, 0, 0, h)
+        down.setColorAt(0.0, QColor(10, 9, 8, 30))
+        down.setColorAt(0.6, QColor(10, 9, 8, 120))
+        down.setColorAt(1.0, QColor(10, 9, 8, 235))
+        p.fillRect(0, 0, w, h, down)
+        p.end()
+        return pm
 
 
 class MiniPlayer(QWidget):
@@ -187,6 +221,7 @@ class MainWindow(QMainWindow):
         self.history = []
         self.offline = False
         self.setWindowTitle(APP_NAME)
+        make_frameless(self)  # Windows: our own title bar, same colour as the app
         self.resize(1440, 900)
         self.setMinimumSize(960, 600)
         self.downloads.message.connect(self.toast)
@@ -208,7 +243,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(login)
 
     def _build_main(self):
-        root = Background()
+        root = self.root_bg = Background()
         self.sidebar = QWidget(objectName="Sidebar")
         self.sidebar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.side_box = QVBoxLayout(self.sidebar)
@@ -354,15 +389,15 @@ class MainWindow(QMainWindow):
         return b
 
     def _top_bar(self):
-        bar = QWidget(objectName="TopBar")
+        bar = DragBar(objectName="TopBar")  # doubles as the window's title bar
         bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         bar.setFixedHeight(64)
         row = QHBoxLayout(bar)
-        row.setContentsMargins(14, 0, 20, 0)
+        row.setContentsMargins(14, 0, 0, 0)
         row.setSpacing(10)
         row.addWidget(self._icon_button("menu", "Show or hide the sidebar", self.toggle_sidebar, 24))
         logo = QLabel()
-        logo.setPixmap(branding.wordmark_pixmap(28, theme.FONT if theme.FONT else "Figtree"))
+        logo.setPixmap(branding.wordmark_pixmap(28, theme.FONT if theme.FONT else "DM Sans"))
         logo.setCursor(Qt.CursorShape.PointingHandCursor)
         logo.mouseReleaseEvent = lambda e: (not self.offline) and self.show_home()
         row.addWidget(logo)
@@ -384,6 +419,11 @@ class MainWindow(QMainWindow):
         row.addWidget(self.server_label)
         account = self._icon_button("person", "Account and settings", lambda: self._account_menu(account), 26)
         row.addWidget(account)
+        row.addSpacing(10)
+        buttons = WindowButtons(self)
+        row.addWidget(buttons, 0, Qt.AlignmentFlag.AlignTop)
+        if not buttons.isVisible():
+            row.addSpacing(10)
         return bar
 
     def _account_menu(self, button):
@@ -415,6 +455,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(page)
         self.stack.setCurrentWidget(page)
         self.back_btn.setEnabled(len(self.history) > 1)
+        self.update_backdrop()
         if self.player is not None and self.shell.currentWidget() is self.player:
             self.minimize_player()  # opening something from the player keeps it playing
 
@@ -426,9 +467,15 @@ class MainWindow(QMainWindow):
         old.deleteLater()
         self.stack.setCurrentWidget(self.history[-1])
         self.back_btn.setEnabled(len(self.history) > 1)
+        self.update_backdrop()
         current = self.history[-1]
         if isinstance(current, DetailsPage):
             current.refresh()  # pick up watched/progress changes (no rebuild if unchanged)
+
+    def update_backdrop(self):
+        """Show the current page's artwork behind the whole window (details pages), else the glows."""
+        page = self.history[-1] if self.history else None
+        self.root_bg.set_art(getattr(page, "backdrop_pixmap", None))
 
     def _backspace(self):
         if not self.search.hasFocus():

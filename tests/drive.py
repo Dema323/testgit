@@ -3,7 +3,8 @@ import json, os, sys, time
 OUT = sys.argv[1]
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QPoint, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from ember import app as appmod  # noqa: F401  (ensures package imports)
@@ -75,6 +76,11 @@ def step(delay):
 @step(3500)
 def home():
     shot("1-home")
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        # Whole window as it appears on screen, to see the title-bar area too.
+        g = win.frameGeometry()
+        win.screen().grabWindow(0, g.x(), g.y(), g.width(), g.height()).save(os.path.join(OUT, "0-window-on-screen.png"))
+    results["frameless"] = bool(win.windowFlags() & Qt.WindowType.FramelessWindowHint)
     win.toggle_sidebar()
 
 
@@ -118,6 +124,7 @@ def show_details():
     shot("5-show-details")
     from ember.cards import HubRow
     results["show200_seasons_row"] = bool(page().findChildren(HubRow))
+    results["show_art_fills_window"] = win.root_bg.art is not None
     win.open_key("300")
 
 
@@ -180,6 +187,8 @@ def playing():
     results["mpv_hwdec"] = p.player.hwdec_current
     results["mpv_vo_configured"] = p.player.vo_configured
     results["player_in_main_window"] = p.window() is win
+    bottom_controls = p.controls.height() - p.seek.mapTo(p.controls, QPoint(0, 0)).y()
+    results["controls_height_fraction"] = round(bottom_controls / max(1, p.controls.height()), 3)
     results["controls_hidden_while_playing"] = not p.controls_visible
     p.player.pause = True
     p._tick()

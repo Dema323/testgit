@@ -1,9 +1,10 @@
 """First-run sign-in (plex.tv PIN flow in the browser) and server selection."""
 from PySide6.QtCore import QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices, QPainter
-from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from . import branding, theme
+from .chrome import DragBar, WindowButtons
 from .cards import label
 from .workers import run_async
 
@@ -21,6 +22,14 @@ class LoginPage(QWidget):
         self.box = QVBoxLayout(card)
         self.box.setSpacing(16)
         outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        title = DragBar()  # lets you move the window from the top strip
+        title.setFixedHeight(40)
+        trow = QHBoxLayout(title)
+        trow.setContentsMargins(0, 0, 0, 0)
+        trow.addStretch()
+        self.window_buttons_row = trow
+        outer.addWidget(title)
         outer.addStretch()
         outer.addWidget(card, 0, Qt.AlignmentFlag.AlignHCenter)
         outer.addStretch(2)
@@ -31,6 +40,10 @@ class LoginPage(QWidget):
             self._load_servers()
         else:
             self._welcome()
+
+    def showEvent(self, event):
+        if self.window_buttons_row.count() == 1:  # add window buttons once we know our window
+            self.window_buttons_row.addWidget(WindowButtons(self.window()), 0, Qt.AlignmentFlag.AlignTop)
 
     def paintEvent(self, event):
         if self.background is None or self.background.size() != self.size():

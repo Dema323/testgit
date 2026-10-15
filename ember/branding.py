@@ -1,24 +1,25 @@
-"""Ember logo: a rounded play triangle in an amber-to-ember gradient on a dark tile, plus wordmark."""
+"""Ember logo: a flame with a play button cut out of it, in an amber-to-ember gradient, plus wordmark."""
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import (QColor, QFont, QImage, QLinearGradient, QPainter, QPainterPath, QPixmap,
-                           QRadialGradient)
+from PySide6.QtGui import QColor, QFont, QImage, QLinearGradient, QPainter, QPainterPath, QPixmap
 
-AMBER = QColor("#ffc24b")
-EMBER = QColor("#ee5a24")
-
-
-def _flame_gradient(top, bottom):
-    g = QLinearGradient(0, top, 0, bottom)
-    g.setColorAt(0.0, AMBER)
-    g.setColorAt(1.0, EMBER)
-    return g
+# Flame outline in a unit square: round base, tip leaning slightly left.
+FLAME = [("M", .50, .97), ("C", .25, .97, .12, .79, .14, .58), ("C", .16, .38, .33, .28, .41, .03),
+         ("C", .58, .19, .86, .37, .86, .60), ("C", .86, .81, .73, .97, .50, .97)]
 
 
-def _play_path(cx, cy, size):
-    """Equilateral-ish play triangle with rounded corners, optically centred."""
-    r = size * 0.11  # corner radius
-    pts = [QPointF(cx - size * 0.36, cy - size * 0.46), QPointF(cx - size * 0.36, cy + size * 0.46),
-           QPointF(cx + size * 0.46, cy)]
+def _path(cmds, x, y, s):
+    path = QPainterPath()
+    for c, *v in cmds:
+        pts = [QPointF(x + v[i] * s, y + v[i + 1] * s) for i in range(0, len(v), 2)]
+        if c == "M":
+            path.moveTo(pts[0])
+        else:
+            path.cubicTo(*pts)
+    path.closeSubpath()
+    return path
+
+
+def _rounded_triangle(pts, r):
     path = QPainterPath()
     for i, p in enumerate(pts):
         prev, nxt = pts[i - 1], pts[(i + 1) % 3]
@@ -35,71 +36,80 @@ def _dist(a, b):
     return (d.x() ** 2 + d.y() ** 2) ** 0.5
 
 
-def paint_mark(p, rect, tile=True):
-    """Draw the logo mark inside rect."""
+def paint_mark(p, rect):
     s = min(rect.width(), rect.height())
     x, y = rect.center().x() - s / 2, rect.center().y() - s / 2
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    if tile:
-        tile_path = QPainterPath()
-        tile_path.addRoundedRect(QRectF(x, y, s, s), s * 0.24, s * 0.24)
-        bg = QLinearGradient(0, y, 0, y + s)
-        bg.setColorAt(0, QColor("#24262b"))
-        bg.setColorAt(1, QColor("#121316"))
-        p.fillPath(tile_path, bg)
-        glow = QRadialGradient(QPointF(x + s * 0.5, y + s * 0.62), s * 0.55)
-        glow.setColorAt(0, QColor(238, 90, 36, 90))
-        glow.setColorAt(1, QColor(238, 90, 36, 0))
-        p.fillPath(tile_path, glow)
-        inner = s * 0.54
-    else:
-        inner = s * 0.92
-    path = _play_path(x + s * 0.53, y + s * 0.5, inner)
-    p.fillPath(path, _flame_gradient(y + s * 0.5 - inner * 0.46, y + s * 0.5 + inner * 0.46))
-    # small highlight along the top edge, like light catching a coal
-    hl = QLinearGradient(0, y + s * 0.5 - inner * 0.46, 0, y + s * 0.5)
-    hl.setColorAt(0, QColor(255, 255, 255, 70))
+    flame = _path(FLAME, x, y, s)
+    cx, cy, t = x + .52 * s, y + .66 * s, .17 * s
+    play = _rounded_triangle([QPointF(cx - t * .8, cy - t), QPointF(cx - t * .8, cy + t),
+                              QPointF(cx + t * 1.05, cy)], t * .22)
+    shape = flame.subtracted(play)
+    g = QLinearGradient(0, y, 0, y + s)
+    g.setColorAt(0.0, QColor("#ffc04a"))
+    g.setColorAt(0.6, QColor("#f36b20"))
+    g.setColorAt(1.0, QColor("#d0381b"))
+    p.fillPath(shape, g)
+    hl = QLinearGradient(x, 0, x + s * .6, 0)  # soft light on the left edge
+    hl.setColorAt(0, QColor(255, 255, 255, 55))
     hl.setColorAt(1, QColor(255, 255, 255, 0))
-    p.fillPath(path, hl)
+    p.fillPath(shape, hl)
     p.restore()
 
 
-def mark_pixmap(size, tile=True, dpr=2.0):
+def mark_pixmap(size, dpr=2.0):
     pm = QPixmap(int(size * dpr), int(size * dpr))
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
-    paint_mark(p, QRectF(0, 0, size * dpr, size * dpr), tile)
+    paint_mark(p, QRectF(0, 0, size * dpr, size * dpr))
     p.end()
     pm.setDevicePixelRatio(dpr)
     return pm
 
 
-def wordmark_pixmap(height=30, family="Figtree", dpr=2.0, with_mark=True):
-    """Mark + 'ember' set in a heavy weight with the same gradient."""
+def wordmark_pixmap(height=30, family="DM Sans", dpr=2.0, with_mark=True):
+    """Flame mark + 'ember' in white."""
     f = QFont(family)
-    f.setPixelSize(int(height * 0.86 * dpr))
-    f.setWeight(QFont.Weight.ExtraBold)
-    f.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 97)
+    f.setPixelSize(int(height * 0.78 * dpr))
+    f.setWeight(QFont.Weight.Bold)
+    f.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 96)
     probe = QImage(1, 1, QImage.Format.Format_ARGB32)
     p = QPainter(probe)
     p.setFont(f)
-    text_w = p.fontMetrics().horizontalAdvance("ember")
-    ascent = p.fontMetrics().ascent()
+    fm = p.fontMetrics()
+    text_w, ascent = fm.horizontalAdvance("ember"), fm.ascent()
     p.end()
-    mark = int(height * dpr) if with_mark else 0
-    gap = int(height * 0.3 * dpr) if with_mark else 0
-    w, h = mark + gap + text_w + 4, int(height * dpr)
-    pm = QPixmap(w, h)
+    h = int(height * dpr)
+    mark = h if with_mark else 0
+    gap = int(h * 0.2) if with_mark else 0
+    pm = QPixmap(mark + gap + text_w + 4, h)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
     if with_mark:
         paint_mark(p, QRectF(0, 0, mark, mark))
-    path = QPainterPath()
-    path.addText(QPointF(mark + gap, (h + ascent * 0.72) / 2), f, "ember")
-    p.fillPath(path, _flame_gradient(h * 0.15, h * 0.9))
+    p.setFont(f)
+    p.setPen(QColor("#ffffff"))
+    p.drawText(QPointF(mark + gap, (h + ascent * 0.72) / 2 + h * 0.04), "ember")
     p.end()
     pm.setDevicePixelRatio(dpr)
     return pm
+
+
+def app_icon_image(size=256):
+    """Flame on a warm dark rounded tile (taskbar / exe icon)."""
+    img = QImage(size, size, QImage.Format.Format_ARGB32)
+    img.fill(Qt.GlobalColor.transparent)
+    p = QPainter(img)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    tile = QPainterPath()
+    tile.addRoundedRect(QRectF(size * .03, size * .03, size * .94, size * .94), size * .22, size * .22)
+    bg = QLinearGradient(0, 0, 0, size)
+    bg.setColorAt(0, QColor("#2b2824"))
+    bg.setColorAt(1, QColor("#171513"))
+    p.fillPath(tile, bg)
+    paint_mark(p, QRectF(size * .16, size * .14, size * .68, size * .68))
+    p.end()
+    return img

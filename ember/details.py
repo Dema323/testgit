@@ -1,6 +1,6 @@
 """Item details: backdrop, poster, actions, version/audio/subtitle pickers, seasons, episodes, cast."""
 from PySide6.QtCore import QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (QComboBox, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
                                QVBoxLayout, QWidget)
 
@@ -167,56 +167,6 @@ class CastCard(QWidget):
             box.addWidget(lab)
 
 
-class Backdrop(QWidget):
-    """Page background: the item's art, faded into the page color. Scaled once per size."""
-
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.source = None
-        self.rendered = None
-
-    def set_pixmap(self, pm):
-        self.source = None if pm.isNull() else pm
-        self.rendered = None
-        self.update()
-
-    def resizeEvent(self, event):
-        self.rendered = None
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        if self.rendered is None or self.rendered.size() != self.size():
-            self.rendered = self._render()
-        p.drawPixmap(0, 0, self.rendered)
-
-    def _render(self):
-        w, h = max(1, self.width()), max(1, self.height())
-        pm = QPixmap(w, h)
-        pm.fill(Qt.GlobalColor.transparent)  # the window's gradient shows through
-        if self.source is None:
-            return pm
-        p = QPainter(pm)
-        art_h = int(w * 9 / 16)
-        scaled = self.source.scaled(w, art_h, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                    Qt.TransformationMode.SmoothTransformation)
-        p.setOpacity(0.5)
-        p.drawPixmap(0, 0, scaled)
-        p.setOpacity(1)
-        # Fade the art out downwards and towards the left (where the text is).
-        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
-        down = QLinearGradient(0, 0, 0, art_h)
-        down.setColorAt(0.0, QColor(0, 0, 0, 255))
-        down.setColorAt(0.45, QColor(0, 0, 0, 200))
-        down.setColorAt(1.0, QColor(0, 0, 0, 0))
-        p.fillRect(0, 0, w, art_h, down)
-        side = QLinearGradient(0, 0, w, 0)
-        side.setColorAt(0.0, QColor(0, 0, 0, 60))
-        side.setColorAt(0.6, QColor(0, 0, 0, 255))
-        p.fillRect(0, 0, w, art_h, side)
-        p.end()
-        return pm
-
-
 class DetailsPage(QWidget):
     """One page for movies, shows, seasons, episodes, artists, albums and collections."""
 
@@ -226,7 +176,7 @@ class DetailsPage(QWidget):
         self.meta = None
         self.children = []
         self.shown_data = None
-        self.backdrop = Backdrop(self)
+        self.backdrop_pixmap = None  # painted full-window by the main window
         self.scroll = QScrollArea(self)
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -243,8 +193,14 @@ class DetailsPage(QWidget):
         self.refresh()
 
     def resizeEvent(self, event):
-        self.backdrop.setGeometry(self.rect())
         self.scroll.setGeometry(self.rect())
+
+    def _set_backdrop(self, pm):
+        self.backdrop_pixmap = None if pm.isNull() else pm
+        try:
+            self.app.update_backdrop()
+        except RuntimeError:
+            pass
 
     # --- data ---------------------------------------------------------------------
 
@@ -285,7 +241,7 @@ class DetailsPage(QWidget):
         if first:
             art = self.meta.get("art") or self.meta.get("grandparentArt") or self.meta.get("parentArt")
             if art and ImageLoader.instance():
-                ImageLoader.instance().load(art, 1920, 1080, self.backdrop.set_pixmap)
+                ImageLoader.instance().load(art, 1920, 1080, self._set_backdrop)
         try:
             self._build()
         except Exception:  # noqa: BLE001 - show something useful instead of a blank page
